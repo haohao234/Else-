@@ -213,6 +213,51 @@ for (const ref of viewRefs) {
   }
 }
 
+// ---- 已知的跨编译器版本陷阱：指向元组成员的 key path ----
+// `ForEach(Array(x.enumerated()), id: \.offset)` 流传极广，但 Swift 不支持指向**元组成员**的
+// key path。换个编译器版本就炸，而且报错指向 ForEach，让人一脸问号。
+function checkTupleKeyPath(src) {
+  return /Array\([^()]*\.enumerated\(\)\)/.test(src) && /id:\s*\\\.(offset|element)\b/.test(src);
+}
+
+// ---- 泛型约束把 View 泛型钉在具体类型上 ----
+// 例：`extension X where Trailing == Color` + 闭包 `{ Color.clear.frame(...) }`。
+// 声明单看完全合理，但 ViewBuilder 闭包产出的是**修饰后的 View**，不是 Color → 推不出来。
+// 默认值请用 EmptyView。
+function checkConcreteViewConstraint(src) {
+  return /where\s+\w+\s*==\s*(?:Color|Image|Text|Button|Label|Divider|Capsule|Circle)\b/.test(src);
+}
+
+for (const [f, { bare }] of stripped) {
+  const rel = relative(ROOT, f).replace(/\\/g, "/");
+  if (checkTupleKeyPath(bare)) {
+    problems.push(`${rel}: 用了 Array(...enumerated()) + id: \\.offset/\\\\.element —— 指向元组成员的 key path 不受支持；改用 id: \\.self 或让元素 Identifiable`);
+  }
+  if (checkConcreteViewConstraint(bare)) {
+    problems.push(`${rel}: 把 View 泛型钉在具体类型上（如 where T == Color）—— ViewBuilder 闭包产出的是修饰后的 View，通常推不出来`);
+  }
+}
+
+// ---- 自测：新判据必须能对反例报出来，否则就是恒真空转 ----
+// 用法：node tools/check_swift.mjs --selftest
+if (process.argv.includes("--selftest")) {
+  const cases = [
+    ["元组 key path（反例）", checkTupleKeyPath("ForEach(Array(items.enumerated()), id: \\.offset) { i, x in }"), true],
+    ["元组 key path（干净）", checkTupleKeyPath("ForEach(items.indices, id: \\.self) { i in }"), false],
+    ["泛型钉死具体 View（反例）", checkConcreteViewConstraint("extension Foo where Trailing == Color {"), true],
+    ["泛型钉死具体 View（干净）", checkConcreteViewConstraint("extension Foo where Trailing == EmptyView {"), false],
+  ];
+  let bad = 0;
+  console.log("=== 判据自测 ===");
+  for (const [name, got, want] of cases) {
+    const ok = got === want;
+    if (!ok) bad++;
+    console.log(`  ${ok ? "PASS" : "FAIL"}  ${name}   期望 ${want} / 实得 ${got}`);
+  }
+  console.log(bad === 0 ? "自测全部通过 ✓" : `自测失败 ${bad} 条 ✗`);
+  process.exit(bad === 0 ? 0 : 1);
+}
+
 // ---- 关键令牌是否落地 ----
 const allBare = [...stripped.values()].map((v) => v.bare).join("\n");
 for (const [label, re] of [

@@ -16,6 +16,11 @@ jobs:
     runs-on: macos-15
     timeout-minutes: 20
 
+    # 需要写权限，才能把编译清单回写成 commit 评论 ——
+    # 那是本流水线唯一"不需要 token 就能读到"的出口，也是自动迭代的关键。
+    permissions:
+      contents: write
+
     steps:
       - uses: actions/checkout@v4
 
@@ -69,6 +74,28 @@ jobs:
         #   1. 它 grep 的是 build.log（只有 xcodebuild 的输出），
         #      不能 grep job 日志 —— 后者混着 GitHub 自己的 Node/punycode 弃用警告，会把闸门误触成红；
         #   2. 用 if: success()，编译已经失败时不要再加一条同样红的步骤盖住真正的错误清单。
+
+      # 这一条是"闭环"的关键：把清单回写成 commit 评论。
+      # 为什么不用 artifact：artifact 必须鉴权才能下载，而 commit 评论是**公开可读**的。
+      # 于是没有 token 的机器也能直接拿到编译结果，不必让用户手工复制粘贴 ——
+      # 在本机既没有凭据、便携版 git 又不完整的条件下，这是唯一能自动迭代的出口。
+      - name: 把编译清单回写到 commit 评论
+        if: always()
+        continue-on-error: true      # 权限万一不够，也不要盖住真正的编译结论
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          ERRN=$(grep -cE ': error:'   build.log || true)
+          WARN=$(grep -cE ': warning:' build.log || true)
+          grep -E "^[^ ]+:[0-9]+:[0-9]+: (error|warning):" build.log | sort -u | head -150 > list.txt || true
+          python3 -c 'import json,sys;b=open("list.txt",encoding="utf-8",errors="replace").read().strip() or "(没有 error / warning 行)";f=chr(96)*3;json.dump({"body":"CI auto-report | error "+sys.argv[1]+" / warning "+sys.argv[2]+"\n\n"+f+"\n"+b+"\n"+f+"\n"},open("payload.json","w",encoding="utf-8"))' "$ERRN" "$WARN"
+          curl -sS -X POST \
+            -H "Authorization: Bearer $GH_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            -H "Content-Type: application/json" \
+            --data @payload.json \
+            "https://api.github.com/repos/${GITHUB_REPOSITORY}/commits/${GITHUB_SHA}/comments" > /dev/null
+          echo "已回写 commit 评论：${GITHUB_SHA}"
 
       - name: 上传构建日志
         if: always()

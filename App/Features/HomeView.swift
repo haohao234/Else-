@@ -116,11 +116,16 @@ struct HomeView: View {
                     }
                     DSStageProgress(filled: record.stage.completedCount)
                     HStack(spacing: 0) {
-                        ForEach(Array(BreedingStage.allCases.enumerated()), id: \.element) { index, stage in
+                        // ⚠️ 不要写 `ForEach(Array(x.enumerated()), id: \.offset)`：
+                        // 指向**元组成员**的 key path 在 Swift 里不受支持，换个编译器版本就炸。
+                        // 这里改用 Identifiable 的枚举本身，下标靠比较枚举值拿。
+                        ForEach(BreedingStage.allCases) { stage in
+                            let isCurrent = stage == .pregnant
                             Text(stage.label)
-                                .font(.system(size: 10, weight: index == 1 ? .semibold : .regular))
-                                .foregroundStyle(index == 1 ? DS.primary : DS.inkTertiary)
-                                .frame(maxWidth: .infinity, alignment: index == 0 ? .leading : (index == 3 ? .trailing : .center))
+                                .font(.system(size: 10, weight: isCurrent ? .semibold : .regular))
+                                .foregroundStyle(isCurrent ? DS.primary : DS.inkTertiary)
+                                .frame(maxWidth: .infinity,
+                                       alignment: stage == .mated ? .leading : (stage == .weaned ? .trailing : .center))
                         }
                     }
                     HStack {

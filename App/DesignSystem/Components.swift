@@ -219,9 +219,14 @@ struct DSNavBar<Trailing: View>: View {
     }
 }
 
-extension DSNavBar where Trailing == Color {
+// ⚠️ 默认值必须是 EmptyView，**不能写 Color**。
+// 踩到的错：`where Trailing == Color` 之下，闭包必须产出一个 `Color`，
+// 而 `Color.clear.frame(...)` 是**修饰后的 View**（_FrameLayout），不是 Color → 编译错误。
+// 这是"只有编译器能裁决"的典型：单看 `Trailing == Color` 这行声明完全合理，
+// 只有真的编译一次才知道它推不出来。
+extension DSNavBar where Trailing == EmptyView {
     init(title: String, onBack: (() -> Void)? = nil) {
-        self.init(title: title, onBack: onBack) { Color.clear.frame(width: 36, height: 36) }
+        self.init(title: title, onBack: onBack) { EmptyView() }
     }
 }
 
@@ -318,11 +323,12 @@ struct DSBarChart: View {
 
     var body: some View {
         HStack(alignment: .bottom, spacing: DS.Space.xxs) {
-            ForEach(Array(values.enumerated()), id: \.offset) { index, v in
+            // 同理不用 `Array(values.enumerated())` + `id: \.offset`：指向元组成员的 key path 不受支持。
+            ForEach(values.indices, id: \.self) { index in
                 let isPeak = highlightLast && index == values.count - 1
                 RoundedRectangle(cornerRadius: 2, style: .continuous)
                     .fill(isPeak ? accent : base)
-                    .frame(height: max(4, height * CGFloat(v / maxValue)))
+                    .frame(height: max(4, height * CGFloat(values[index] / maxValue)))
             }
         }
         .frame(height: height, alignment: .bottom)
