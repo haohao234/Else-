@@ -1,14 +1,45 @@
 import SwiftUI
 
-// MARK: - 根容器：自绘底部导航
+// MARK: - 根容器：自绘底部导航 + 每个 tab 一个导航栈
 //
 // 设计稿用的是悬浮胶囊导航（不是系统 TabView），所以这里手写。
-// 用 `.safeAreaInset(edge:)` 承载它 —— 内容会自动获得正确底部内边距，
-// 不需要每个屏各自加 padding（那种做法一定会有人在某一屏漏掉）。
+//
+// 为什么把 tab 与各栈路径收进 `AppNav` 这个对象：
+//   首页的「查看明细」要跳到**记账 tab** —— 跨 tab 跳转如果靠 @State 层层传
+//   binding，RootTabView 会迅速退化成一个什么都往里塞的中转站。
+//   收进一个对象之后，任何页面都能 `nav.go(to: "finance")`，且栈深可见（下面要用）。
+//
+// 为什么每层各有一个 path：一个 tab 里翻到第三层、切走再切回来，位置还在。
+// 用一个共享 path 会让"在种猫里翻到详情、切到记账、再切回来"直接乱掉。
+
+@MainActor
+final class AppNav: ObservableObject {
+    @Published var tab: String = "home"
+
+    @Published var homePath: [AppRoute] = []
+    @Published var catsPath: [AppRoute] = []
+    @Published var breedingPath: [AppRoute] = []
+    @Published var financePath: [AppRoute] = []
+    @Published var morePath: [AppRoute] = []
+
+    /// 当前 tab 的栈深。二级页要占满整屏，得靠它决定收不收起底部导航。
+    var currentDepth: Int {
+        switch tab {
+        case "home": return homePath.count
+        case "cats": return catsPath.count
+        case "breeding": return breedingPath.count
+        case "finance": return financePath.count
+        default: return morePath.count
+        }
+    }
+
+    func go(to tab: String) {
+        self.tab = tab
+    }
+}
 
 struct RootTabView: View {
-    @EnvironmentObject private var store: AppStore
-    @State private var selection: String = "home"
+    @StateObject private var nav = AppNav()
 
     private let items: [DSTabItem] = [
         DSTabItem(id: "home", systemName: "house", title: "首页"),
@@ -23,148 +54,28 @@ struct RootTabView: View {
             DS.bg.ignoresSafeArea()
 
             Group {
-                switch selection {
-                case "home": HomeView()
-                case "cats": CatsTabView()
-                case "breeding": BreedingTabView()
-                case "finance": FinanceTabView()
-                default: MoreTabView()
+                switch nav.tab {
+                case "home":
+                    NavigationStack(path: $nav.homePath) { HomeView().dsRoutes() }
+                case "cats":
+                    NavigationStack(path: $nav.catsPath) { CatsListView().dsRoutes() }
+                case "breeding":
+                    NavigationStack(path: $nav.breedingPath) { BreedingListView().dsRoutes() }
+                case "finance":
+                    NavigationStack(path: $nav.financePath) { FinanceListView().dsRoutes() }
+                default:
+                    NavigationStack(path: $nav.morePath) { MoreView().dsRoutes() }
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .safeAreaInset(edge: .bottom, spacing: 0) {
-                DSTabBar(items: items, selection: $selection)
-            }
-        }
-    }
-}
-
-// MARK: - 以下四个 tab 的完整版在「阶段二」逐屏补齐。
-// 现在它们都已经是**可编译、可运行**的真实视图（走同一套令牌与组件），
-// 只是内容还没填满 —— 这样阶段一就能拿到编译器结论，而不是等全部写完才知道有没有错。
-
-struct CatsTabView: View {
-    @EnvironmentObject private var store: AppStore
-
-    var body: some View {
-        VStack(spacing: 0) {
-            DSScreenTitle(title: "种猫档案")
-            ScrollView {
-                VStack(spacing: DS.Space.m) {
-                    ForEach(store.data.cats) { cat in
-                        DSListRow {
-                            DSIconTile(systemName: "cat", size: 56)
-                            VStack(alignment: .leading, spacing: DS.Space.xs) {
-                                Text(cat.name).font(DS.Typo.rowTitle).foregroundStyle(DS.ink)
-                                Text("\(cat.gender.label) · \(cat.ageLine) · \(Formatters.isoDay.string(from: cat.birthDate))")
-                                    .font(DS.Typo.caption)
-                                    .foregroundStyle(DS.inkTertiary)
-                            }
-                            Spacer(minLength: 0)
-                            DSStatusChip(text: cat.status.label, tone: cat.status.tone)
-                        }
-                    }
+                // 二级页收起 tab 栏：编辑页底部有自己的保存条，两级底部控件叠在一起
+                // 既挤又容易点错；这也是"页面层级"该有的视觉语言。
+                if nav.currentDepth == 0 {
+                    DSTabBar(items: items, selection: $nav.tab)
                 }
-                .padding(.horizontal, DS.Space.screenH)
             }
         }
-    }
-}
-
-struct BreedingTabView: View {
-    @EnvironmentObject private var store: AppStore
-
-    var body: some View {
-        VStack(spacing: 0) {
-            DSScreenTitle(title: "繁育记录")
-            ScrollView {
-                VStack(spacing: DS.Space.m) {
-                    ForEach(store.breedingsWithNames) { record in
-                        VStack(alignment: .leading, spacing: DS.Space.m) {
-                            HStack {
-                                Text(record.title).font(DS.Typo.cardTitle).foregroundStyle(DS.ink)
-                                Spacer(minLength: DS.Space.s)
-                                DSStatusChip(text: record.stage.label, tone: record.stage.tone)
-                            }
-                            DSStageProgress(filled: record.stage.completedCount)
-                            HStack {
-                                Text(record.progressLine).font(DS.Typo.caption).foregroundStyle(DS.inkTertiary)
-                                Spacer(minLength: 0)
-                                Text(record.code).font(.system(size: 10, design: .monospaced)).foregroundStyle(DS.inkTertiary)
-                            }
-                        }
-                        .padding(DS.Space.m)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .dsRowSurface()
-                    }
-                }
-                .padding(.horizontal, DS.Space.screenH)
-            }
-        }
-    }
-}
-
-struct FinanceTabView: View {
-    @EnvironmentObject private var store: AppStore
-
-    var body: some View {
-        let month = Date()
-        let bills = store.bills(in: month)
-        let breakdown = store.breakdown(of: bills)
-
-        return VStack(spacing: 0) {
-            DSScreenTitle(title: "育猫记账")
-            ScrollView {
-                VStack(spacing: DS.Space.l) {
-                    DSCard(radius: DS.Radius.cardLarge) {
-                        Text("本月累计支出").font(DS.Typo.caption).foregroundStyle(DS.inkTertiary)
-                        Text(Money.yuan(store.total(of: bills)))
-                            .font(DS.Typo.heroAmount)
-                            .foregroundStyle(DS.primary)
-                    }
-
-                    if breakdown.isEmpty {
-                        DSEmptyState(systemName: "creditcard",
-                                     title: "本月还没有记账",
-                                     message: "猫粮、医疗、疫苗、配种费随手记下来\n月底就能看清钱花在哪",
-                                     hint: "支持导出 CSV / Excel 到「文件」App")
-                        .padding(.top, DS.Space.xxl * 2)
-                    } else {
-                        DSCard {
-                            Text("分类占比").font(DS.Typo.cardTitle).foregroundStyle(DS.ink)
-                            ForEach(breakdown, id: \.category) { item in
-                                HStack {
-                                    Circle().fill(DS.primary).frame(width: 8, height: 8)
-                                    Text(item.category.label).font(DS.Typo.body).foregroundStyle(DS.inkSecondary)
-                                    Spacer(minLength: DS.Space.s)
-                                    Text(Money.yuan(item.amount))
-                                        .font(DS.Typo.rowAmount)
-                                        .foregroundStyle(DS.ink)
-                                }
-                            }
-                        }
-                    }
-                }
-                .padding(.horizontal, DS.Space.screenH)
-            }
-        }
-    }
-}
-
-struct MoreTabView: View {
-    var body: some View {
-        VStack(spacing: 0) {
-            DSScreenTitle(title: "更多")
-            ScrollView {
-                VStack(spacing: DS.Space.m) {
-                    DSEmptyState(systemName: "gearshape",
-                                 title: "设置与备份",
-                                 message: "设置页（本地备份 / 导出 / 提醒规则）在阶段二补齐\n已经砍掉了所有云同步相关的功能与文案",
-                                 hint: "本 App 不联网、不埋点，数据只在本机")
-                    .padding(.top, DS.Space.xxl * 3)
-                }
-                .padding(.horizontal, DS.Space.screenH)
-            }
-        }
+        .environmentObject(nav)
     }
 }

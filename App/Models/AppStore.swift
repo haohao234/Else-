@@ -110,6 +110,44 @@ final class AppStore: ObservableObject {
         }
     }
 
+    // MARK: 繁育
+
+    func upsert(breeding: BreedingRecord) {
+        if let idx = data.breedings.firstIndex(where: { $0.id == breeding.id }) {
+            data.breedings[idx] = breeding
+        } else {
+            data.breedings.append(breeding)
+        }
+        save()
+    }
+
+    func deleteBreeding(id: UUID) {
+        data.breedings.removeAll { $0.id == id }
+        save()
+    }
+
+    func breeding(id: UUID?) -> BreedingRecord? {
+        guard let id else { return nil }
+        return data.breedings.first { $0.id == id }
+    }
+
+    /// 装配好父母名字的单条记录（详情页用）。与 `breedingsWithNames` 同源，
+    /// 只是少了"每次都要重算全表"的开销。
+    func breedingWithNames(id: UUID) -> BreedingRecord? {
+        guard let record = breeding(id: id) else { return nil }
+        var out = record
+        out.motherName = cat(id: record.motherID)?.name ?? "未知"
+        out.fatherName = cat(id: record.fatherID)?.name ?? "未知"
+        return out
+    }
+
+    /// 某只猫参与的繁育记录（按编号倒序）
+    func breedings(of catID: UUID) -> [BreedingRecord] {
+        breedingsWithNames
+            .filter { $0.motherID == catID || $0.fatherID == catID }
+            .sorted { $0.code > $1.code }
+    }
+
     // MARK: 账单
 
     func upsert(bill: Bill) {
@@ -210,26 +248,28 @@ extension AppData {
                          coat: "乳白英短 Cream", birthDate: month(-64, day: 5),
                          weightKg: 5.1, status: .retired, litterCount: 12)
 
+        // 注意：不再有 `stage:` 这个参数 —— 阶段由日期推导（见 BreedingRecord.stage）。
+        // 下面这五条覆盖了四个阶段的全部形态，跑起来就能逐屏比对。
         let r1 = BreedingRecord(code: "BR-2026-03", motherID: mochi.id, fatherID: leo.id,
-                                stage: .pregnant, matedDate: day(-38), pregnantDate: day(-10),
+                                matedDate: day(-38), pregnantDate: day(-10),
                                 expectedDueDate: day(15), kittenCount: nil,
                                 note: "第二胎，B 超确认 5 个胎心", motherName: mochi.name, fatherName: leo.name)
         let r2 = BreedingRecord(code: "BR-2026-02", motherID: xueqiu.id, fatherID: leo.id,
-                                stage: .mated, matedDate: day(5), pregnantDate: nil,
+                                matedDate: day(5), pregnantDate: nil,
                                 expectedDueDate: nil, kittenCount: nil, note: "待确认怀孕",
                                 motherName: xueqiu.name, fatherName: leo.name)
         let r3 = BreedingRecord(code: "BR-2026-01", motherID: niangao.id, fatherID: leo.id,
-                                stage: .birth, matedDate: day(-118), pregnantDate: day(-92),
+                                matedDate: day(-118), pregnantDate: day(-92),
                                 expectedDueDate: day(-33), birthDate: day(-33), kittenCount: 5,
                                 note: "",
                                 motherName: niangao.name, fatherName: leo.name)
         let r4 = BreedingRecord(code: "BR-2025-08", motherID: niangao.id, fatherID: leo.id,
-                                stage: .weaned, matedDate: day(-320), pregnantDate: day(-295),
+                                matedDate: day(-320), pregnantDate: day(-295),
                                 expectedDueDate: day(-236), birthDate: day(-236), weanedDate: day(-180),
                                 kittenCount: 4, note: "",
                                 motherName: niangao.name, fatherName: leo.name)
         let r5 = BreedingRecord(code: "BR-2026-04", motherID: niangao.id, fatherID: huihui.id,
-                                stage: .mated, matedDate: day(2), pregnantDate: nil,
+                                matedDate: day(2), pregnantDate: nil,
                                 expectedDueDate: nil, kittenCount: nil, note: "计划配种",
                                 motherName: niangao.name, fatherName: huihui.name)
 

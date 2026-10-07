@@ -108,17 +108,45 @@ function structBody(bare, startIdx) {
   return end >= 0 ? rest.slice(0, end) : rest;
 }
 
+/**
+ * 扫描类型体里的**成员声明**（大括号深度 1）。
+ *
+ * ⚠️ 深度过滤是必须的，两个真实的误判都是它引起的：
+ *   · 函数体里的局部变量（`var names: [UUID: String] = [:]`）会被当成存储属性，
+ *     于是"有 private 成员 + 有外部传入的成员"凭空成立 → 整屏假报（2026-10-07，SettingsView）；
+ *   · 局部变量混进"声明顺序"会让子序列检查变宽 → **假通过**，比误报更危险。
+ * 判据自己出错时的代价不比代码出错低，所以抽成函数、进自测。
+ */
+function memberDeclarations(body, startDepth = 1) {
+  const out = [];
+  let depth = startDepth;                          // 进入类型体时已经在第 1 层
+  for (const line of body.split("\n")) {
+    const atDepth = depth;
+    for (const ch of line) { if (ch === "{") depth++; else if (ch === "}") depth--; }
+    if (atDepth !== startDepth) continue;
+    const m = line.match(/^\s{2,}(?:@(\w+)\s+)?(private\s+)?(let|var)\s+([A-Za-z_]\w*)\s*([:=])(.*)$/);
+    if (!m) continue;
+    const [, , isPrivate, , name, , tail] = m;
+    out.push({
+      name,
+      isPrivate: Boolean(isPrivate),
+      // 计算属性的判据：**声明部分（冒号/等号之后）出现 `{`**。
+      // ⚠️ 不能用"整行以 `{` 结尾"：单行计算属性 `private var maxValue: Double { max(...) }`
+      //    结尾是 `}` 而不是 `{`，那样判会把计算属性当成存储属性（2026-10-07 实测踩到）。
+      // ⚠️ 也不能只看"有没有花括号"就完：`private let columns = [GridItem(...)]` 里
+      //    方括号中的初始化调用带括号但不带花括号，所以这条判据对它是安全的（判为存储属性，正确）。
+      isComputed: tail.includes("{"),
+      line: line.trim(),
+    });
+  }
+  return out;
+}
+
 /** 存储属性的声明顺序（**排除计算属性**：行尾带 `{` 的不是存储属性） */
 function storedPropertyOrder(body) {
-  const order = [];
-  for (const line of body.split("\n")) {
-    const m = line.match(/^\s{2,}(?:@\w+\s+)?(?:let|var)\s+([A-Za-z_]\w*)\s*:\s*(.+?)\s*$/);
-    if (!m) continue;
-    const tail = m[2].trim();
-    if (tail.includes("{")) continue;              // 计算属性
-    order.push(m[1]);
-  }
-  return order;
+  return memberDeclarations(body)
+    .filter((d) => !d.isComputed)
+    .map((d) => d.name);
 }
 
 const files = walk(join(ROOT, "App"));
@@ -172,16 +200,10 @@ for (const [f, { bare }] of stripped) {
   const rel = relative(ROOT, f).replace(/\\/g, "/");
   for (const m of bare.matchAll(/^struct\s+([A-Za-z_][A-Za-z0-9_]*)[^{]*\{/gm)) {
     const body = structBody(bare, m.index + m[0].length);
-    const priv = [];
-    const internalStored = [];
-    for (const line of body.split("\n")) {
-      const mm = line.match(/^\s{2,}(?:@(\w+)\s+)?(private\s+)?(let|var)\s+([A-Za-z_]\w*)\s*:\s*(.+?)\s*$/);
-      if (!mm) continue;
-      const [, , isPrivate, , name, tail] = mm;
-      if (tail.trim().includes("{")) continue;                 // 计算属性
-      if (/private\s*\(set\)/.test(line)) { internalStored.push(name); continue; }
-      if (isPrivate) priv.push(name); else internalStored.push(name);
-    }
+    // 走统一的成员扫描（含深度过滤 + 计算属性判定，见 memberDeclarations 的注释）
+    const members = memberDeclarations(body).filter((d) => !d.isComputed);
+    const priv = members.filter((d) => d.isPrivate).map((d) => d.name);
+    const internalStored = members.filter((d) => !d.isPrivate).map((d) => d.name);
     const hasInit = /\binit\s*\(/.test(body);
     // 只有当"别人需要传参构造它"时才是真问题；全是私有状态（SwiftUI 视图常态）不算。
     if (priv.length > 0 && internalStored.length > 0 && !hasInit) {
@@ -236,18 +258,18 @@ function checkConcreteViewConstraint(src) {
 // 而把方法改成 static"的那一刻，很容易漏掉某个字段没提成参数），一次就是一轮 CI 往返。
 function checkStaticInstanceUse(bare) {
   const hits = [];
-  // 只收**类型体内**的成员（大括号深度 === 1）。
-  // 不加深度过滤会把函数体里的局部 `let base` / `decoder` / `r` 也当成实例属性
-  // —— 2026-10-07 实测这么错过一次，属性表里混进 30 多个局部名，误报率直接失控。
+  // 实例成员 = **类型体内**深度 1 的存储属性，且不带 static。
+  // ⚠️ 这里必须"逐类型取体"，不能拿整文件按固定深度扫：
+  //    文件从深度 0 开始，而 structBody 取出的体从深度 1 开始 —— 共用一个默认值必然错位，
+  //    错位的表现是"一个成员都收不到"，也就是这条判据静默失效（自测当场抓到，2026-10-07）。
   const propNames = new Set();
-  let depth = 0;
-  for (const line of bare.split("\n")) {
-    const atDepth = depth;
-    for (const ch of line) { if (ch === "{") depth++; else if (ch === "}") depth--; }
-    if (atDepth !== 1) continue;
-    if (/\bstatic\b/.test(line)) continue;
-    const m = line.match(/^\s+(?:(?:private|fileprivate|public|internal)\s+)?(?:var|let)\s+(\w+)\s*[:=]/);
-    if (m) propNames.add(m[1]);
+  for (const m of bare.matchAll(/^(?:public |internal |open |final )*(?:struct|class|actor)\s+[A-Za-z_][A-Za-z0-9_]*[^{]*\{/gm)) {
+    const body = structBody(bare, m.index + m[0].length);
+    for (const d of memberDeclarations(body)) {
+      if (d.isComputed) continue;
+      if (/\bstatic\b/.test(d.line)) continue;
+      propNames.add(d.name);
+    }
   }
   // 签名正则：**必须容忍 `throws -> T`**。
   // 原来写成 `\(([\s\S]*?)\)\s*(?:->[^{]*)?\{` —— 遇到
@@ -296,6 +318,10 @@ for (const [f, { bare }] of stripped) {
 // ---- 自测：新判据必须能对反例报出来，否则就是恒真空转 ----
 // 用法：node tools/check_swift.mjs --selftest
 if (process.argv.includes("--selftest")) {
+  // 自测样本必须走**和真实路径同一条路**：先按 structBody 取体，再交给判据。
+  // 之前直接把"含声明行的整段"喂进去，等于测了一条生产中不存在的路径 ——
+  // 于是判据本身错位时，样本仍能通过（4 条自测当场翻车，2026-10-07）。
+  const bodyOf = (src) => structBody(src, src.indexOf("{") + 1);
   const cases = [
     ["元组 key path（反例）", checkTupleKeyPath("ForEach(Array(items.enumerated()), id: \\.offset) { i, x in }"), true],
     ["元组 key path（干净）", checkTupleKeyPath("ForEach(items.indices, id: \\.self) { i in }"), false],
@@ -348,6 +374,45 @@ if (process.argv.includes("--selftest")) {
       "    }",
       "}",
     ].join("\n")).length > 0, true],
+    // 成员扫描：函数体里的局部变量**不是**成员。
+    // 这是 2026-10-07 的真实误报现场 —— SettingsView 里的 `var names: [UUID: String] = [:]`
+    // 被判成"外部传入的属性"，于是整屏报"有 private 属性又有外部属性却没 init"。
+    ["成员扫描（反例：函数内局部变量不算成员）", memberDeclarations(bodyOf([
+      "struct A {",
+      "    private var cached: Int = 0",
+      "    var title: String = \"\"",
+      "    func f() {",
+      "        var names: [String] = []",
+      "        names.append(\"x\")",
+      "    }",
+      "}",
+    ].join("\n"))).some((d) => d.name === "names"), false],
+    // 成员扫描（正例）：真成员必须都在，且 private / 计算属性分别判对。
+    ["成员扫描（正例：成员要收全、private 与计算属性要判对）", (() => {
+      const ms = memberDeclarations(bodyOf([
+        "struct A {",
+        "    private var cached: Int = 0",
+        "    var title: String = \"\"",
+        "    var rows: [String] { return [] }",
+        "    private var maxValue: Double { max(1, 2) }",
+        "}",
+      ].join("\n")));
+      const byName = Object.fromEntries(ms.map((d) => [d.name, d]));
+      return Object.keys(byName).length === 4
+        && byName.cached.isPrivate === true
+        && byName.title.isPrivate === false
+        && byName.rows.isComputed === true
+        && byName.maxValue.isComputed === true;   // ← 单行计算属性结尾是 `}`，也必须判为计算属性
+    })(), true],
+    // 声明顺序：计算属性（哪怕类型里有方括号、结尾是 `}`）不能被当成存储属性 ——
+    // 混进去会让子序列检查变宽，那是"假通过"，比误报更危险。
+    ["声明顺序（反例：计算属性不算存储属性）", storedPropertyOrder(bodyOf([
+      "struct A {",
+      "    var a: Int = 0",
+      "    var filtered: [String] { return [] }",
+      "    var b: Int = 0",
+      "}",
+    ].join("\n"))).join(","), "a,b"],
   ];
   let bad = 0;
   console.log("=== 判据自测 ===");

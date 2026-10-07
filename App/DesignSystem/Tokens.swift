@@ -49,12 +49,31 @@ enum DS {
     ]
 
     /// 记账分类配搭色。**只允许用在这里**——它们是"携带信息"的，不是装饰。
+    /// 用法：分类占比的图例圆点 + 分类选择网格，两处必须一一对应。
     enum CategoryTint {
-        static let food = Color(hex: 0xB57EDC)      // 猫粮主食
+        static let food = Color(hex: 0xB57EDC)      // 猫粮主食（主色）
         static let medical = Color(hex: 0x7FB8C9)   // 医疗健康（青）
+        static let vaccine = Color(hex: 0xA8CDD9)   // 疫苗驱虫（青的浅一档 —— 见下方说明）
         static let breeding = Color(hex: 0xE39BC8)  // 配种费用（玫红）
         static let supplies = Color(hex: 0xD9B08C)  // 用品耗材（砂金）
         static let other = Color(hex: 0x9A8DA0)     // 其他
+
+        // ⚠️ `vaccine` 是阶段二新增的第 6 档（画布上分类只画了 5 个）。
+        // 取"青的浅一档"而不是新开一个色相，理由：疫苗驱虫与医疗健康是同一族
+        // （都是健康支出），用**同色相的不同强度**表达家族关系，
+        // 正是这套设计"靠填充强度而不是靠颜色种类"的一贯做法。
+        // 换色值 = 改设计决定，改之前先跟设计确认。
+
+        static func color(for category: BillCategory) -> Color {
+            switch category {
+            case .food: return food
+            case .medical: return medical
+            case .vaccine: return vaccine
+            case .breeding: return breeding
+            case .supplies: return supplies
+            case .other: return other
+            }
+        }
     }
 
     /// 大 CTA 渐变（画布 45°）

@@ -65,10 +65,12 @@ enum BreedingStage: String, Codable, CaseIterable, Identifiable {
         }
     }
 
-    /// 已达成阶段数（1…4），用于四段进度条
+    /// 已达成阶段数（1…4），用于四段进度条。
+    /// 「配对」= 1 而不是 2 —— 阶段名说的是"现在停在哪一步"，
+    /// 停留在配对阶段就是完成了 1 格（原来写 2 是个安静的错，会让"配对中"看起来像已经怀孕）。
     var completedCount: Int {
         switch self {
-        case .mated: return 2       // 配对已完成，正在怀孕
+        case .mated: return 1
         case .pregnant: return 2
         case .birth: return 3
         case .weaned: return 4
@@ -188,7 +190,6 @@ struct BreedingRecord: Identifiable, Codable, Hashable {
     var code: String                 // BR-2026-03
     var motherID: UUID
     var fatherID: UUID
-    var stage: BreedingStage
     var matedDate: Date?
     var pregnantDate: Date?
     var expectedDueDate: Date?
@@ -196,6 +197,33 @@ struct BreedingRecord: Identifiable, Codable, Hashable {
     var weanedDate: Date?
     var kittenCount: Int?
     var note: String = ""
+
+    /// ⚠️ 阶段**由日期推导**，不是存下来的字段 —— 与 `Reminder.urgency` 同一条约定。
+    ///
+    /// 为什么这件事必须做对：如果把 stage 存成一个可手改的字段，它迟早会和日期打架
+    /// （显示"怀孕中"却没有怀孕日期、显示"已出窝"却没有出窝日期）。
+    /// 而"两个真相"的代价不是显示难看，是**用户开始不信任这个列表** ——
+    /// 而繁育记录这个功能的价值，恰恰就是"我不用记，它都记着"。
+    ///
+    /// 推导规则就是"事实推进到哪一步"：出窝 > 生产 > 怀孕 > 配对。
+    var stage: BreedingStage {
+        BreedingRecord.stage(matedDate: matedDate,
+                             pregnantDate: pregnantDate,
+                             birthDate: birthDate,
+                             weanedDate: weanedDate)
+    }
+
+    /// 阶段推导的**纯函数版本**：编辑器手上只有 @State（还没生成实例），
+    /// 但也要实时显示"改完之后算什么阶段"，所以推导规则必须能脱离实例调用。
+    static func stage(matedDate: Date?,
+                      pregnantDate: Date?,
+                      birthDate: Date?,
+                      weanedDate: Date?) -> BreedingStage {
+        if weanedDate != nil { return .weaned }
+        if birthDate != nil { return .birth }
+        if pregnantDate != nil { return .pregnant }
+        return .mated
+    }
 
     /// 列表卡与详情页共用的"进展描述"。
     /// ⚠️ 这类句子**必须做成不依赖实例的纯函数**：编辑器手上只有 @State（还没生成实例），
@@ -347,4 +375,11 @@ enum Formatters {
         f.dateFormat = "yyyy 年 M 月"
         return f
     }()
+}
+
+extension String {
+    /// 表单里最好用的一句话工具：清掉用户输入的首尾空白与换行。
+    /// 为什么必须做：`"Mochi "` 和 `"Mochi"` 会被当成两只不同的猫，
+    /// 而在列表里它们看起来一模一样 —— 这类"看不见的差异"是最难排查的一类数据脏。
+    var trimmed: String { trimmingCharacters(in: .whitespacesAndNewlines) }
 }
