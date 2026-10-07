@@ -33,7 +33,10 @@ targets:
         PRODUCT_BUNDLE_IDENTIFIER: com.elesecattery.EleseCattery
         INFOPLIST_FILE: App/Info.plist
         CODE_SIGN_ENTITLEMENTS: App/EleseCattery.entitlements
-        ASSETCATALOG_COMPILER_APPICON_NAME: ""   # 本轮不带资源目录，图标后补
+        # App 图标：资源目录在 App/Assets.xcassets，图标是**单张 1024×1024**（Xcode 14+ 的单尺寸格式）。
+        # ⚠️ 图标源图必须是 RGB（不能带透明通道），当前那张是 1024×1024 8-bit RGB ✓
+        # 不是自己画的：用的是猫舍自己提供的那张（银渐层英短 + 碧绿猫眼），别再替换成别的。
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
     scheme:
       testTargets: []
 

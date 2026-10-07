@@ -43,12 +43,17 @@ jobs:
             -scheme EleseCattery \
             -configuration Debug \
             -destination 'generic/platform=iOS' \
+            -derivedDataPath build \
             CODE_SIGNING_ALLOWED=NO \
             CODE_SIGNING_REQUIRED=NO \
             CODE_SIGN_IDENTITY="" \
             2>&1 | tee build.log
         # CODE_SIGNING_ALLOWED=NO 是关键：runner 上没有签名身份，不清掉会先在签名这步失败。
         # 只做编译检查时不需要签名，entitlements 在关签名时也不做校验。
+        #
+        # -derivedDataPath build 是为了让产物落在**可预测的位置**（./build/Build/Products/…）：
+        # 默认的 DerivedData 路径带哈希，从外部没法稳定拿到 .app —— 而没有 .app 就验不了
+        # "图标到底进没进包"（那正是下一步 artifact 要上传的东西）。
 
       - name: 摘出错误与警告清单
         if: always()
@@ -97,9 +102,20 @@ jobs:
             "https://api.github.com/repos/${GITHUB_REPOSITORY}/commits/${GITHUB_SHA}/comments" > /dev/null
           echo "已回写 commit 评论：${GITHUB_SHA}"
 
-      - name: 上传构建日志
+      - name: 上传构建日志与"图标证据"
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: build-log
-          path: build.log
+          # 除了日志，再把**产物里能证明"图标进包了"的三样文件**一起上传：
+          #   · Info.plist —— 里面的 CFBundleIconName 应指向 AppIcon
+          #   · Assets.car —— 资源目录编译出来的东西
+          #   · AppIcon*.png —— actool 从 1024 源图生成的分辨率图
+          # 为什么非要这样验：CI 绿只证明"编译过了"，不证明"图标在包里"。
+          # 而这两件事的差别，要等用户装到手机上（看到一个空白图标）才发现 —— 太晚了。
+          path: |
+            build.log
+            build/Build/Products/Debug-iphoneos/EleseCattery.app/Info.plist
+            build/Build/Products/Debug-iphoneos/EleseCattery.app/Assets.car
+            build/Build/Products/Debug-iphoneos/EleseCattery.app/AppIcon*.png
+          if-no-files-found: warn
