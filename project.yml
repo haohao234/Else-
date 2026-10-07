@@ -1,0 +1,43 @@
+name: EleseCattery
+options:
+  bundleIdPrefix: com.elesecattery
+  deploymentTarget:
+    iOS: "17.0"
+  createIntermediateGroups: true
+  groupSortPosition: top
+
+settings:
+  base:
+    SWIFT_VERSION: "5.0"                 # 先停 5.0：Swift 6 会把严格并发从警告升级成错误
+    SWIFT_STRICT_CONCURRENCY: minimal
+    MARKETING_VERSION: "1.0"             # 侧载必需，缺了 CFBundleShortVersionString 会不存在
+    CURRENT_PROJECT_VERSION: "1"         # 缺了 CFBundleVersion 会不存在 → 装不上，且不报错
+    ENABLE_DEBUG_DYLIB: "NO"             # Xcode 16 的 Debug 默认开，会让主二进制变成壳
+    TARGETED_DEVICE_FAMILY: "1"          # 仅 iPhone
+    GENERATE_INFOPLIST_FILE: "NO"        # 用手写 plist，保住里面的注释
+    CODE_SIGN_STYLE: Automatic
+    DEVELOPMENT_TEAM: ""
+
+targets:
+  EleseCattery:
+    type: application
+    platform: iOS
+    sources:
+      - path: App
+        excludes:
+          - "Info.plist"
+          - "EleseCattery.entitlements"
+    settings:
+      base:
+        PRODUCT_NAME: EleseCattery        # 必须是 ASCII：中文会毁掉 PRODUCT_MODULE_NAME
+        PRODUCT_BUNDLE_IDENTIFIER: com.elesecattery.EleseCattery
+        INFOPLIST_FILE: App/Info.plist
+        CODE_SIGN_ENTITLEMENTS: App/EleseCattery.entitlements
+        ASSETCATALOG_COMPILER_APPICON_NAME: ""   # 本轮不带资源目录，图标后补
+    scheme:
+      testTargets: []
+
+# 说明：本工程**没有** App Extension。
+# 理由：设计稿里的「提醒」是 App 内页面（09 屏），不是通知上的自定义样式卡片；
+# 没有自定义通知 UI 就不需要 Notification Content Extension，
+# 也就不需要 App Group —— 免费 Apple ID 侧载的最大拦路虎（application-groups）直接绕开了。

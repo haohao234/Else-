@@ -1,0 +1,19 @@
+# 行尾统一：仓库里一律 LF。
+# 为什么这不是洁癖——.github/workflows/*.yml 里的 run 脚本若带 CRLF，
+# 到 macOS runner 上会以 `/bin/sh: Syntax error` 失败，而报错完全指不到"行尾"这个原因。
+# Windows 的 core.autocrlf=true 正好会制造它。
+* text=auto eol=lf
+
+# 用户双击运行的批处理必须是 CRLF：cmd.exe 的 goto / call :label 在 LF 行尾的文件里找不到标签，
+# 后果是"出错分支全部哑掉、正常路径照常跑"，不给任何提示。
+*.bat text eol=crlf
+*.cmd text eol=crlf
+
+# 二进制不要参与行尾转换
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.webp binary
+*.pdf binary
+*.ipa binary
+*.xcuserstate binary

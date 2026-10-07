@@ -1,0 +1,68 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  手写 Info.plist（不用 XcodeGen 的 info: 生成）。
+  理由：每一行注释都在解释"这个键为什么必须存在、漏了会怎样"，
+  而生成式 plist 会把注释冲掉 —— 那份注释本身是交接物的一部分。
+-->
+<plist version="1.0">
+<dict>
+	<!-- 显示名用中文，PRODUCT_NAME 保持 ASCII。
+	     漏了这条：桌面图标下方是 "EleseCattery"。 -->
+	<key>CFBundleDisplayName</key>
+	<string>Elese的猫舍</string>
+
+	<key>CFBundleDevelopmentRegion</key>
+	<string>zh_CN</string>
+	<key>CFBundleExecutable</key>
+	<string>$(EXECUTABLE_NAME)</string>
+	<key>CFBundleIdentifier</key>
+	<string>$(PRODUCT_BUNDLE_IDENTIFIER)</string>
+	<key>CFBundleInfoDictionaryVersion</key>
+	<string>6.0</string>
+	<key>CFBundleName</key>
+	<string>$(PRODUCT_NAME)</string>
+
+	<!-- 漏了这条：扩展/系统不认这是个 App。必须是 APPL。 -->
+	<key>CFBundlePackageType</key>
+	<string>APPL</string>
+
+	<!-- 这两个是"装得上"的必填项，且 Xcode 不会因为缺它们报错。
+	     正确做法是在 project.yml 里显式给 MARKETING_VERSION / CURRENT_PROJECT_VERSION，
+	     否则生成出来这两个键干脆不存在，侧载时才被拒。 -->
+	<key>CFBundleShortVersionString</key>
+	<string>$(MARKETING_VERSION)</string>
+	<key>CFBundleVersion</key>
+	<string>$(CURRENT_PROJECT_VERSION)</string>
+
+	<key>LSRequiresIPhoneOS</key>
+	<true/>
+
+	<!-- iOS 14+ 必须提供启动屏配置，空字典即可（否则可能被系统以非全屏方式启动）。 -->
+	<key>UILaunchScreen</key>
+	<dict/>
+
+	<!-- 设计稿只做了浅色一套，且主色 #B57EDC 在深底上会过曝。
+	     强制 Light，避免系统跟随深色模式把未适配的界面渲染坏。
+	     （要做深色模式时必须整套重做文字层级，不是反色就行。） -->
+	<key>UIUserInterfaceStyle</key>
+	<string>Light</string>
+
+	<!-- 仅竖屏：设计稿全部是 390×844 竖版。 -->
+	<key>UISupportedInterfaceOrientations</key>
+	<array>
+		<string>UIInterfaceOrientationPortrait</string>
+	</array>
+
+	<!-- 让用户在「文件」App 里能看见并删除导出的 CSV / Excel 与备份文件。
+	     这是把产品承诺「数据只在本机、你自己能删」落成机制的一环。
+	     注意：只暴露 Documents，数据库本体放在 Application Support，不会被这里暴露。 -->
+	<key>UIFileSharingEnabled</key>
+	<true/>
+	<key>LSSupportsOpeningDocumentsInPlace</key>
+	<true/>
+
+	<!-- 没有 App Group / 没有 NSExtension* 键 —— 本工程不含任何扩展。
+	     一旦以后加了通知内容扩展，它必须以本 App 的 bundle id 为前缀，并在两个 target 里都开 App Group。 -->
+</dict>
+</plist>

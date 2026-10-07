@@ -1,0 +1,78 @@
+name: iOS build
+
+# 为什么需要这条流水线：本机没有 Xcode，但"能不能编译"不该靠猜。
+# macos-15 runner 自带完整 Xcode，所以**不需要自己有 Mac** 也能拿到编译器结论。
+#
+# 为什么只编译、不跑模拟器：这一阶段要的是"它编译得过吗"，
+# 不是"App 跑起来了吗"。跑起来是后面真机/模拟器验收的事。
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: macos-15
+    timeout-minutes: 20
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 显示工具链版本
+        run: |
+          xcodebuild -version
+          swift --version
+
+      - name: 安装 XcodeGen
+        run: brew install xcodegen
+
+      - name: 生成工程（真相在 project.yml，不在 .xcodeproj）
+        run: xcodegen generate
+
+      - name: 编译
+        run: |
+          set -o pipefail
+          xcodebuild build \
+            -project EleseCattery.xcodeproj \
+            -scheme EleseCattery \
+            -configuration Debug \
+            -destination 'generic/platform=iOS' \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY="" \
+            2>&1 | tee build.log
+        # CODE_SIGNING_ALLOWED=NO 是关键：runner 上没有签名身份，不清掉会先在签名这步失败。
+        # 只做编译检查时不需要签名，entitlements 在关签名时也不做校验。
+
+      - name: 摘出错误与警告清单
+        if: always()
+        run: |
+          echo "=== 错误 / 警告清单（这才是本流水线的产出）==="
+          grep -E "^[^ ]+:[0-9]+:[0-9]+: (error|warning):" build.log | sort -u || echo "（无）"
+          echo "=== 计数 ==="
+          echo "error:   $(grep -cE ': error:'   build.log || true)"
+          echo "warning: $(grep -cE ': warning:' build.log || true)"
+
+      # 绿勾只回答"编译过了吗"，不回答"干净吗"。
+      # 没有这条闸门，下面那句「0 warning」迟早变成一句没人负责的假话。
+      - name: 把 warning 也当失败（本工程承诺 0 警告）
+        if: success()
+        run: |
+          N=$(grep -cE ': warning:' build.log || true)
+          if [ "$N" != "0" ]; then
+            echo "::error::$N 条 warning —— 清单见上面「错误 / 警告清单」那段。"
+            exit 1
+          fi
+          echo "✓ warning 0 条 —— 与文档里的承诺一致"
+        # 注意两点：
+        #   1. 它 grep 的是 build.log（只有 xcodebuild 的输出），
+        #      不能 grep job 日志 —— 后者混着 GitHub 自己的 Node/punycode 弃用警告，会把闸门误触成红；
+        #   2. 用 if: success()，编译已经失败时不要再加一条同样红的步骤盖住真正的错误清单。
+
+      - name: 上传构建日志
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-log
+          path: build.log

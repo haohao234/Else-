@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  故意是空的：本工程不需要任何 capability。
+
+  关键判断 —— **不要 App Group**。
+  App Group 是免费 Apple ID 侧载最大的拦路虎，报错长这样：
+      None of the valid provisioning profiles allowed the specified entitlements:
+      com.apple.security.application-groups
+  而本工程没有任何扩展进程需要跨进程共享容器，所以完全不需要它。
+  以后若真加了通知内容扩展，才需要：主 App 与扩展的 entitlements 里都开同名 group，
+  并且 group id 也得在自己的账号下注册得到（group.<...> 也是全局唯一的）。
+
+  同理不需要的还有：Push Notifications（只用本地通知，不需要 aps-environment）。
+-->
+<plist version="1.0">
+<dict/>
+</plist>

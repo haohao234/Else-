@@ -1,0 +1,22 @@
+# 工程真相在 project.yml —— .xcodeproj 是 UUID 的 XML，两人改必冲突、diff 看不懂。
+# 需要工程时跑：xcodegen generate
+*.xcodeproj
+*.xcworkspace
+xcuserdata/
+DerivedData/
+build/
+.build/
+*.xcuserstate
+
+# 编译与运行产物
+*.app
+*.ipa
+*.dSYM
+*.log
+build.log
+
+# 本机/工具产物
+.DS_Store
+Thumbs.db
+.edge-tmp/
+__probe_tmp.html
