@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 
 // MARK: - 组件层 · 阶段二新增
 //
@@ -9,21 +10,36 @@ import SwiftUI
 
 // MARK: 头像
 
-/// 种猫头像块。现在用「首字 + 柔和底」；有照片时再走真图（PhotosPicker 在下一轮补）。
+/// 种猫头像块：**有照片就显示照片，没有就用「首字 + 柔和底」**。
+///
 /// 为什么一定要有兜底样式：猫舍里总有几只还没拍照的猫，
 /// 缺图不该让列表看起来像坏了 —— 那是"数据没填"的视觉表达，不是错误。
+///
+/// 组件本身**不认识 AppStore**（照片从外面传进来）：这样它既能被列表用、
+/// 也能被编辑页用（编辑页显示的是"还没保存的草稿照片"），而不用为了预览去动数据库。
 struct DSCatAvatar: View {
-    let cat: Cat
+    let name: String
+    var image: UIImage? = nil
     var size: CGFloat = 56
 
-    private var initial: String { String(cat.name.prefix(1)) }
+    private var initial: String { name.isEmpty ? "?" : String(name.prefix(1)) }
 
     var body: some View {
-        Text(initial)
-            .font(.system(size: size * 0.42, weight: .semibold))
-            .foregroundStyle(DS.primary)
-            .frame(width: size, height: size)
-            .background(DS.surfaceSoft, in: RoundedRectangle(cornerRadius: size * 0.32, style: .continuous))
+        Group {
+            if let image {
+                Image(uiImage: image)
+                    .resizable()
+                    .scaledToFill()
+            } else {
+                Text(initial)
+                    .font(.system(size: size * 0.42, weight: .semibold))
+                    .foregroundStyle(DS.primary)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .background(DS.surfaceSoft)
+            }
+        }
+        .frame(width: size, height: size)
+        .clipShape(RoundedRectangle(cornerRadius: size * 0.32, style: .continuous))
     }
 }
 

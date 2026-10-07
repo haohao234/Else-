@@ -1,5 +1,6 @@
 import Foundation
 import SwiftUI
+import UIKit
 
 // MARK: - 根数据容器
 //
@@ -76,6 +77,53 @@ final class AppStore: ObservableObject {
         save()
     }
 
+    // MARK: 头像照片
+    //
+    // 照片存沙盒（`Application Support/EleseCattery/avatars/`），**数据库里只记文件名**。
+    // 为什么不把照片塞进 JSON：那份文件要能随时导出成一个小文本，而照片是二进制大块 ——
+    // 混在一起会让"导出/备份"从"几十 KB"变成"几十 MB"，而用户只是想存个账。
+    //
+    // ⚠️ 文件名**不带扩展名**：用户从相册选来的可能是 JPEG / PNG / HEIC，
+    // 而我们不做转码。写死 `.jpg` 会让文件内容与名字不符（以后谁按后缀去解码就会踩坑）；
+    // `UIImage(data:)` 是按内容识别格式的，不需要后缀。
+
+    private var avatarCache: [String: UIImage] = [:]
+
+    var avatarDirectory: URL {
+        storeDirectory.appendingPathComponent("avatars", isDirectory: true)
+    }
+
+    /// 读头像（带内存缓存：列表滚动会反复构造行视图，不该每次都读盘）
+    func avatarImage(named name: String?) -> UIImage? {
+        guard let name, !name.isEmpty else { return nil }
+        if let hit = avatarCache[name] { return hit }
+        let url = avatarDirectory.appendingPathComponent(name)
+        guard let data = try? Data(contentsOf: url), let image = UIImage(data: data) else { return nil }
+        avatarCache[name] = image
+        return image
+    }
+
+    /// 存一张新头像，返回文件名；失败返回 nil。同名覆盖（一只猫一个文件）。
+    @discardableResult
+    func saveAvatar(_ data: Data, for catID: UUID) -> String? {
+        try? FileManager.default.createDirectory(at: avatarDirectory, withIntermediateDirectories: true)
+        let name = "cat-\(catID.uuidString)"
+        let url = avatarDirectory.appendingPathComponent(name)
+        do {
+            try data.write(to: url, options: .atomic)
+            avatarCache[name] = UIImage(data: data)
+            return name
+        } catch {
+            return nil
+        }
+    }
+
+    func removeAvatar(named name: String?) {
+        guard let name, !name.isEmpty else { return }
+        avatarCache[name] = nil
+        try? FileManager.default.removeItem(at: avatarDirectory.appendingPathComponent(name))
+    }
+
     // MARK: 种猫
 
     func upsert(cat: Cat) {
@@ -88,6 +136,9 @@ final class AppStore: ObservableObject {
     }
 
     func deleteCat(id: UUID) {
+        // 顺手把它的头像文件也删掉 —— 否则用户删了猫，沙盒里还留着一张照片，
+        // 而那张照片在界面上再也看不到、也没法删。（数据只在本机的承诺，包括"能删干净"。）
+        removeAvatar(named: data.cats.first { $0.id == id }?.avatarFileName)
         data.cats.removeAll { $0.id == id }
         // 级联：把挂在它下面的繁育记录一并清掉，避免出现指向不存在猫的记录
         data.breedings.removeAll { $0.motherID == id || $0.fatherID == id }

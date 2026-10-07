@@ -110,7 +110,9 @@ struct CatsListView: View {
                 ForEach(filtered) { cat in
                     NavigationLink(value: AppRoute.catDetail(cat.id)) {
                         DSListRow {
-                            DSCatAvatar(cat: cat, size: 56)
+                            DSCatAvatar(name: cat.name,
+                                        image: store.avatarImage(named: cat.avatarFileName),
+                                        size: 56)
                             VStack(alignment: .leading, spacing: DS.Space.xs) {
                                 Text(cat.name)
                                     .font(DS.Typo.rowTitle)

@@ -68,7 +68,9 @@ struct CatDetailView: View {
     private func headerCard(_ cat: Cat) -> some View {
         DSCard(radius: DS.Radius.cardLarge) {
             HStack(spacing: DS.Space.xl) {
-                DSCatAvatar(cat: cat, size: 72)
+                DSCatAvatar(name: cat.name,
+                            image: store.avatarImage(named: cat.avatarFileName),
+                            size: 72)
                 VStack(alignment: .leading, spacing: DS.Space.xs) {
                     Text(cat.name)
                         .font(DS.Typo.screenTitle)
