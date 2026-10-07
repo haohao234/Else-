@@ -33,6 +33,16 @@ if defined GITEXE goto :eof
 if exist "%~1\cmd\git.exe" set "GITEXE=%~1\cmd\git.exe"
 goto :eof
 
+:do_probe
+rem sets PROBEOK=1 on success; honours PROXYARG when it is defined
+set "PROBEOK="
+set "PXC="
+if defined PROXYARG set "PXC=-c http.proxy=%PROXYARG%"
+"%GITEXE%" %PXC% ls-remote --heads "%REPOURL%" >> "%LOG%" 2>&1
+if errorlevel 1 goto :eof
+set "PROBEOK=1"
+goto :eof
+
 :git_ok
 for %%P in ("%GITEXE%") do set "GITDIR=%%~dpP"
 rem ---- 关键：把这几层目录都加进 PATH ----
@@ -125,15 +135,58 @@ echo.
 
 echo [6/8] probing the target ...
 echo   (this step separates wrong-url / auth-expired / network)
-"%GITEXE%" ls-remote --heads "%REPOURL%" >> "%LOG%" 2>&1
-if errorlevel 1 goto :probe_fail
+set "PROBEOK="
+set "PROXYARG="
+set "PROBE_TRY=0"
+:probe_loop
+set /a PROBE_TRY+=1
+call :do_probe
+if defined PROBEOK goto :probe_ok
+if %PROBE_TRY% GEQ 3 goto :try_local_proxy
+echo   not reachable yet (attempt %PROBE_TRY% of 3) - retrying in 6s ...
+echo   probe attempt %PROBE_TRY% failed >> "%LOG%" 2>&1
+timeout /t 6 /nobreak >nul
+goto :probe_loop
+
+:try_local_proxy
+rem ---- local proxy fallback ----
+rem Why this exists: direct connectivity to github.com:443 from CN is bursty.
+rem It works for a while, then answers "Could not connect to server" for a while
+rem (that is exactly how attempt #3 of this script died at 16:37).
+rem If a local proxy happens to be running (Clash / v2ray / ...), it is worth a try.
+rem Trust rule: a port is only accepted if ls-remote REALLY succeeds through it.
+rem No guessing, no silent config changes - the probe decides.
+echo   [i] direct probes failed - looking for a local proxy that really works ...
+set "PROXYARG="
+for %%P in (7890 7897 10809 10808 1080 8888 2080 33210) do call :try_proxy_port %%P
+if not defined PROXYARG echo   [i] no usable local proxy found
+if not defined PROXYARG goto :probe_fail
+echo   [ok] reachable THROUGH THE PROXY %PROXYARG% - the push will use it too
+goto :probe_ok
+
+:try_proxy_port
+rem two gates: (1) something is listening, (2) ls-remote actually works through it.
+rem gate 2 is what keeps this honest - a SOCKS-only port accepts a TCP connect
+rem but cannot carry an http.proxy, so it must be allowed to fail and move on.
+if defined PROXYARG goto :eof
+powershell -NoProfile -Command "try{$c=New-Object Net.Sockets.TcpClient;$c.Connect('127.0.0.1',%1);$c.Close();exit 0}catch{exit 1}" >nul 2>&1
+if errorlevel 1 goto :eof
+echo   [i] port %1 is listening - testing it ...
+"%GITEXE%" -c http.proxy=http://127.0.0.1:%1 ls-remote --heads "%REPOURL%" >> "%LOG%" 2>&1
+if errorlevel 1 goto :eof
+set "PROXYARG=http://127.0.0.1:%1"
+goto :eof
+
+:probe_ok
+set "PXC="
+if defined PROXYARG set "PXC=-c http.proxy=%PROXYARG%"
 echo   reachable OK
 "%GITEXE%" remote remove origin >nul 2>&1
 "%GITEXE%" remote add origin "%REPOURL%"
 echo.
 
 echo [7/8] pre-check: is the remote empty?
-"%GITEXE%" fetch origin >nul 2>&1
+"%GITEXE%" %PXC% fetch origin >nul 2>&1
 "%GITEXE%" rev-list --count FETCH_HEAD > "%TEMP%\eles_rcount.txt" 2>nul
 set "RCOUNT="
 for /f "usebackq tokens=* delims=" %%C in ("%TEMP%\eles_rcount.txt") do set "RCOUNT=%%C"
@@ -145,16 +198,17 @@ if /i not "%GO%"=="Y" goto :abort
 :proceed
 echo.
 
-echo [8/8] pushing (up to 3 attempts - connectivity to github is bursty)
+echo [8/8] pushing (up to 5 attempts - connectivity to github is bursty)
 set "TRY=0"
 :pushloop
 set /a TRY+=1
-echo   attempt %TRY% ...
-"%GITEXE%" push -u origin main >> "%LOG%" 2>&1
+echo   attempt %TRY% of 5 ...
+"%GITEXE%" %PXC% push -u origin main >> "%LOG%" 2>&1
 if not errorlevel 1 goto :verify
-if %TRY% GEQ 3 goto :push_fail
-echo   failed - retrying in 5s ...
-timeout /t 5 /nobreak >nul
+if %TRY% GEQ 5 goto :push_fail
+echo   failed - retrying in 8s ...
+echo   push attempt %TRY% failed >> "%LOG%" 2>&1
+timeout /t 8 /nobreak >nul
 goto :pushloop
 
 :verify
@@ -162,7 +216,7 @@ rem NEVER trust the exit code alone - compare the refs.
 "%GITEXE%" rev-parse HEAD > "%TEMP%\eles_local.txt" 2>nul
 set "LOCAL="
 for /f "usebackq tokens=* delims=" %%L in ("%TEMP%\eles_local.txt") do set "LOCAL=%%L"
-"%GITEXE%" ls-remote origin refs/heads/main > "%TEMP%\eles_remote.txt" 2>nul
+"%GITEXE%" %PXC% ls-remote origin refs/heads/main > "%TEMP%\eles_remote.txt" 2>nul
 set "REMOTE="
 for /f "usebackq tokens=1" %%L in ("%TEMP%\eles_remote.txt") do set "REMOTE=%%L"
 if /i "%LOCAL%"=="%REMOTE%" goto :success
@@ -178,6 +232,7 @@ echo ============================================================
 echo   PUSHED OK
 echo   local  = %LOCAL%
 echo   remote = %REMOTE%
+if defined PROXYARG echo   via    = %PROXYARG%  (local proxy)
 echo.
 echo   The cloud build starts automatically. Watch it here:
 echo   %WEBURL%/actions
@@ -193,22 +248,45 @@ exit /b 0
 echo.
 echo   [X] Cannot reach the remote. Raw error tail:
 powershell -NoProfile -Command "Get-Content -Tail 12 '%LOG%'"
+call :net_diag
 echo.
 echo   - "repository not found"  -^> url wrong, or repo is private
 echo                          and you are not signed in yet
 echo   - "Authentication failed" -^> a browser window should open;
 echo                          finish the sign-in and run this again
-echo   - "Could not connect"/"timed out" -^> network. Run it again later;
-echo                          github connectivity from CN is intermittent
+echo   - "Could not connect"/"TIMEOUT" -^> it is the NETWORK, not the script.
+echo                          Direct github access from CN flaps: it worked
+echo                          20 minutes ago and can be dead for a while.
+echo                          Take one of these:
+echo                            1) if you normally use a VPN / proxy, turn it
+echo                               ON and run this again (the script will
+echo                               find a local proxy by itself if there is one)
+echo                            2) wait a few minutes and run it again
 goto :fail
+
+:net_diag
+rem 把"到底是 DNS、TCP 还是 git 自己的问题"摊开写清楚 ——
+rem 不写的话，用户只能看到一句 Could not connect，无从判断该修什么。
+set "NETOUT=%TEMP%\eles_net.txt"
+powershell -NoProfile -Command "try{$ips=([Net.Dns]::GetHostAddresses('github.com') | ForEach-Object {$_.IPAddressToString}) -join ', '; Write-Output ('  DNS github.com      -> ' + $ips)}catch{Write-Output '  DNS github.com      -> FAILED (cannot resolve)'}" > "%NETOUT%" 2>&1
+powershell -NoProfile -Command "try{$c=New-Object Net.Sockets.TcpClient;$r=$c.BeginConnect('github.com',443,$null,$null);if($r.AsyncWaitHandle.WaitOne(8000)){$c.EndConnect($r);$c.Close();Write-Output '  TCP github.com:443  -> OK'}else{Write-Output '  TCP github.com:443  -> TIMEOUT (blocked / no route)'}}catch{Write-Output ('  TCP github.com:443  -> FAILED ' + $_.Exception.Message)}" >> "%NETOUT%" 2>&1
+powershell -NoProfile -Command "$p=@();foreach($n in 7890,7897,10809,10808,1080,8888,2080,33210){try{$c=New-Object Net.Sockets.TcpClient;$c.Connect('127.0.0.1',$n);$c.Close();$p+=$n}catch{}};if($p.Count -gt 0){Write-Output ('  local proxy ports   -> ' + ($p -join ', '))}else{Write-Output '  local proxy ports   -> none listening'}" >> "%NETOUT%" 2>&1
+echo.
+echo   --- network diagnostic -------------------------------
+type "%NETOUT%"
+echo   -----------------------------------------------------
+type "%NETOUT%" >> "%LOG%"
+goto :eof
 
 :push_fail
 echo.
-echo   [X] Push failed after 3 attempts. Raw error tail:
+echo   [X] Push failed after 5 attempts. Raw error tail:
 powershell -NoProfile -Command "Get-Content -Tail 20 '%LOG%'"
+call :net_diag
 echo.
 echo   If it says "rejected" / "non-fast-forward": the remote is not empty.
 echo   Delete the repo, recreate it WITHOUT any initial files, run again.
+echo   If it says "Could not connect": it is the network - see the notes above.
 goto :fail
 
 :abort

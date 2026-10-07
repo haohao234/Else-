@@ -228,6 +228,58 @@ function checkConcreteViewConstraint(src) {
   return /where\s+\w+\s*==\s*(?:Color|Image|Text|Button|Label|Divider|Capsule|Circle)\b/.test(src);
 }
 
+// ---- static 上下文里裸用实例成员（2026-10-07 由 CI 抓到，固化成判据）----
+// 例：`static func progressLine(...) { if let n = kittenCount { ... } }` ——
+// static 函数里没有实例，直接写实例属性名就报
+// `instance member 'kittenCount' cannot be used on type 'BreedingRecord'`。
+// 这个错**只有编译器会告诉你**：写的时候看着特别自然（尤其是"为了让编辑器复用
+// 而把方法改成 static"的那一刻，很容易漏掉某个字段没提成参数），一次就是一轮 CI 往返。
+function checkStaticInstanceUse(bare) {
+  const hits = [];
+  // 只收**类型体内**的成员（大括号深度 === 1）。
+  // 不加深度过滤会把函数体里的局部 `let base` / `decoder` / `r` 也当成实例属性
+  // —— 2026-10-07 实测这么错过一次，属性表里混进 30 多个局部名，误报率直接失控。
+  const propNames = new Set();
+  let depth = 0;
+  for (const line of bare.split("\n")) {
+    const atDepth = depth;
+    for (const ch of line) { if (ch === "{") depth++; else if (ch === "}") depth--; }
+    if (atDepth !== 1) continue;
+    if (/\bstatic\b/.test(line)) continue;
+    const m = line.match(/^\s+(?:(?:private|fileprivate|public|internal)\s+)?(?:var|let)\s+(\w+)\s*[:=]/);
+    if (m) propNames.add(m[1]);
+  }
+  // 签名正则：**必须容忍 `throws -> T`**。
+  // 原来写成 `\(([\s\S]*?)\)\s*(?:->[^{]*)?\{` —— 遇到
+  //   `static func encode(_ value: AppData) throws -> Data {`
+  // 那个可选的 `->` 组接不上 `throws`，于是正则回溯，拿**函数体里**的
+  // `encoder.encode(value)` 那个 `)` 来收尾，把整个函数体当成参数表 →
+  // 凭空报出「encode() 裸用了实例属性」这种不存在的错（2026-10-07 实测）。
+  // 现在参数表里禁止出现括号/花括号，且 `)` 与 `{` 之间不许有 `;`，回溯就跑不远了。
+  const re = /static\s+func\s+(\w+)\s*\(([^(){}]*)\)[^{;]*\{/g;
+  let m2;
+  while ((m2 = re.exec(bare))) {
+    const fnName = m2[1];
+    const open = m2.index + m2[0].length - 1;
+    let d = 0, end = -1;
+    for (let i = open; i < bare.length; i++) {
+      if (bare[i] === "{") d++;
+      else if (bare[i] === "}") { d--; if (d === 0) { end = i; break; } }
+    }
+    if (end < 0) continue;                                  // 括号不配对就不猜
+    const body = bare.slice(open + 1, end);
+    const params = new Set([...m2[2].matchAll(/(\w+)\s*:/g)].map((x) => x[1]));
+    const locals = new Set([...body.matchAll(/\b(?:var|let)\s+(\w+)/g)].map((x) => x[1]));
+    for (const p of propNames) {
+      if (params.has(p) || locals.has(p)) continue;
+      if (new RegExp("(?<![.\\w])" + p + "(?![\\w:])").test(body)) {
+        hits.push(`${fnName}() 裸用了实例属性 ${p} —— 要么提成参数，要么前面加类型/实例限定`);
+      }
+    }
+  }
+  return hits;
+}
+
 for (const [f, { bare }] of stripped) {
   const rel = relative(ROOT, f).replace(/\\/g, "/");
   if (checkTupleKeyPath(bare)) {
@@ -235,6 +287,9 @@ for (const [f, { bare }] of stripped) {
   }
   if (checkConcreteViewConstraint(bare)) {
     problems.push(`${rel}: 把 View 泛型钉在具体类型上（如 where T == Color）—— ViewBuilder 闭包产出的是修饰后的 View，通常推不出来`);
+  }
+  for (const h of checkStaticInstanceUse(bare)) {
+    problems.push(`${rel}: static 上下文里 ${h}`);
   }
 }
 
@@ -246,6 +301,53 @@ if (process.argv.includes("--selftest")) {
     ["元组 key path（干净）", checkTupleKeyPath("ForEach(items.indices, id: \\.self) { i in }"), false],
     ["泛型钉死具体 View（反例）", checkConcreteViewConstraint("extension Foo where Trailing == Color {"), true],
     ["泛型钉死具体 View（干净）", checkConcreteViewConstraint("extension Foo where Trailing == EmptyView {"), false],
+    ["static 裸用实例属性（反例）", checkStaticInstanceUse([
+      "struct A {",
+      "    var kittenCount: Int?",
+      "    static func line(stage: Int, matedDate: Int) -> String {",
+      "        return \"n = \\(kittenCount ?? 0)\"",
+      "    }",
+      "}",
+    ].join("\n")).length > 0, true],
+    ["static 裸用实例属性（干净：提成参数）", checkStaticInstanceUse([
+      "struct A {",
+      "    var kittenCount: Int?",
+      "    static func line(stage: Int, kittenCount: Int?) -> String {",
+      "        return \"n = \\(kittenCount ?? 0)\"",
+      "    }",
+      "}",
+    ].join("\n")).length > 0, false],
+    ["static 裸用实例属性（干净：有同名局部变量）", checkStaticInstanceUse([
+      "struct A {",
+      "    var f: String?",
+      "    static func line() -> String {",
+      "        let f = \"x\"",
+      "        return f",
+      "    }",
+      "}",
+    ].join("\n")).length > 0, false],
+    // 这一条是回归：签名里带 `throws -> T` 时，旧正则回溯到函数体内的 `)` 收尾，
+    // 把整个函数体当成参数表 → 对一个完全正确的函数报「裸用了实例属性」。
+    ["static 裸用实例属性（干净：throws -> 签名不许回溯）", checkStaticInstanceUse([
+      "final class S {",
+      "    let storeFileURL: URL",
+      "    private static func encode(_ value: Data) throws -> Data {",
+      "        let encoder = JSONEncoder()",
+      "        return try encoder.encode(value)",
+      "    }",
+      "}",
+    ].join("\n")).length > 0, false],
+    // 反向再验一次：深度过滤不能把「函数体里的局部变量」误当成实例属性。
+    // 局部 `base` 与真实实例属性 `base2` 同名时，若属性表混进局部名就会漏报。
+    ["static 裸用实例属性（反例：局部量同名也不能漏报）", checkStaticInstanceUse([
+      "class S {",
+      "    var total: Int = 0",
+      "    static func f() -> Int {",
+      "        let n = 1",
+      "        return total + n",
+      "    }",
+      "}",
+    ].join("\n")).length > 0, true],
   ];
   let bad = 0;
   console.log("=== 判据自测 ===");

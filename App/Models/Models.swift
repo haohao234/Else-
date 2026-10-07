@@ -200,11 +200,16 @@ struct BreedingRecord: Identifiable, Codable, Hashable {
     /// 列表卡与详情页共用的"进展描述"。
     /// ⚠️ 这类句子**必须做成不依赖实例的纯函数**：编辑器手上只有 @State（还没生成实例），
     /// 若两处各写一份，两份必然漂移。入参全部是原始值，两边产出逐字相同的字符串。
+    ///
+    /// ⚠️ `kittenCount` 也必须是**入参**，不能省（第一版就栽在这里）：
+    /// static 上下文里没有实例，直接写 `if let n = kittenCount` 报
+    /// `instance member 'kittenCount' cannot be used on type 'BreedingRecord'`。
     static func progressLine(stage: BreedingStage,
                              matedDate: Date?,
                              pregnantDate: Date?,
                              birthDate: Date?,
-                             weanedDate: Date?) -> String {
+                             weanedDate: Date?,
+                             kittenCount: Int?) -> String {
         let f = Formatters.monthDay
         switch stage {
         case .mated:
@@ -234,7 +239,8 @@ struct BreedingRecord: Identifiable, Codable, Hashable {
                                     matedDate: matedDate,
                                     pregnantDate: pregnantDate,
                                     birthDate: birthDate,
-                                    weanedDate: weanedDate)
+                                    weanedDate: weanedDate,
+                                    kittenCount: kittenCount)
     }
 
     var title: String { "\(motherName) × \(fatherName)" }
