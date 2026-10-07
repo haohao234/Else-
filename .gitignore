@@ -20,3 +20,7 @@ build.log
 Thumbs.db
 .edge-tmp/
 __probe_tmp.html
+
+# 推送脚本的本地副产物（各人机器上不一样，不进仓库）
+.push-url
+push-log.txt
