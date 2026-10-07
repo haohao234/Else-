@@ -35,7 +35,7 @@ jobs:
       - name: 生成工程（真相在 project.yml，不在 .xcodeproj）
         run: xcodegen generate
 
-      - name: 编译
+      - name: 编译 Debug（快速反馈）
         run: |
           set -o pipefail
           xcodebuild build \
@@ -53,32 +53,114 @@ jobs:
         #
         # -derivedDataPath build 是为了让产物落在**可预测的位置**（./build/Build/Products/…）：
         # 默认的 DerivedData 路径带哈希，从外部没法稳定拿到 .app —— 而没有 .app 就验不了
-        # "图标到底进没进包"（那正是下一步 artifact 要上传的东西）。
+        # "图标到底进没进包"（那正是后面 artifact 要上传的东西）。
+
+      # ── 真机验收通道：Release 构建 + 未签名 IPA ────────────────────────────
+      #
+      # 为什么要**单独**再做一次 Release：Debug 包**装到真机启动即崩**，
+      # 而编译全绿、看不出任何异常。根因是 Xcode 16 给 Debug 默认开 ENABLE_DEBUG_DYLIB：
+      # 主二进制会退化成一个靠 @rpath 加载 *.debug.dylib 的**壳**，
+      # 重签名之后那条 rpath 就断了。（工程里另写了 ENABLE_DEBUG_DYLIB=NO 当第二层保险。）
+      #
+      # 为什么打成 .ipa：Sideloadly 认的结构是 `xxx.ipa → Payload/xxx.app`，
+      # 直接给它 .app 目录它不认，会报 `Invalid file`（那其实是 Python 的
+      # plistlib.InvalidFileException 原文，不是"苹果拒绝了"）。
+      #
+      # 打的是**未签名**包 —— 签名交给 Sideloadly 用你自己的 Apple ID 做。
+      # 本工程 entitlements 是空的、没有 App Extension，
+      # 所以免费 Apple ID 自签最大的拦路虎（App Group）在这一版不存在。
+      - name: 编译 Release + 打未签名 IPA（给 Sideloadly）
+        run: |
+          set -o pipefail
+          xcodebuild build \
+            -project EleseCattery.xcodeproj \
+            -scheme EleseCattery \
+            -configuration Release \
+            -destination 'generic/platform=iOS' \
+            -derivedDataPath build \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY="" \
+            2>&1 | tee build-release.log
+          rm -rf Payload
+          mkdir -p Payload
+          cp -R "build/Build/Products/Release-iphoneos/EleseCattery.app" Payload/
+          zip -qry "EleseCattery-unsigned.ipa" Payload
+          ls -la "EleseCattery-unsigned.ipa"
+
+      # 拆包自检放在**上传之前**：坏包不该变成用户能下载的 artifact ——
+      # 用户是照指引点 Artifacts 的人，他不会拆开看版本键。
+      # 这几项的共同特点：**编译全绿、包看起来也正常，装的时候才被拒**。
+      - name: 拆包自检（版本键 / 调试 dylib / 主二进制 / IPA 结构）
+        run: |
+          APP="build/Build/Products/Release-iphoneos/EleseCattery.app"
+          FAIL=0
+
+          echo "=== 1) 版本键（侧载必填；缺了不报错，但装不上）==="
+          for k in CFBundleVersion CFBundleShortVersionString; do
+            V=$(plutil -extract "$k" raw -o - "$APP/Info.plist" 2>/dev/null || echo "")
+            echo "  $k = '$V'"
+            if [ -z "$V" ]; then
+              echo "::error::$k 缺失 —— 侧载会被拒"
+              FAIL=1
+            fi
+          done
+
+          echo "=== 2) 不能有调试 dylib（有它 = 打成了 Debug）==="
+          D=$(find "$APP" -name "*.debug.dylib")
+          if [ -n "$D" ]; then
+            echo "::error::包里带了调试 dylib：$D"
+            FAIL=1
+          else
+            echo "  ✓ 没有"
+          fi
+
+          echo "=== 3) 主可执行文件不能是壳 ==="
+          SIZE=$(stat -f%z "$APP/EleseCattery")
+          echo "  EleseCattery = $SIZE 字节"
+          if [ "$SIZE" -lt 500000 ]; then
+            echo "::error::主二进制只有 $SIZE 字节，疑似壳（ENABLE_DEBUG_DYLIB 没关）"
+            FAIL=1
+          fi
+
+          echo "=== 4) IPA 结构必须是 Payload/*.app ==="
+          unzip -l "EleseCattery-unsigned.ipa" | head -20
+          if unzip -l "EleseCattery-unsigned.ipa" | grep -q "Payload/EleseCattery.app/Info.plist"; then
+            echo "  ✓ 结构正确"
+          else
+            echo "::error::IPA 结构不对 —— Sideloadly 会报 Invalid file"
+            FAIL=1
+          fi
+
+          exit $FAIL
 
       - name: 摘出错误与警告清单
         if: always()
         run: |
-          echo "=== 错误 / 警告清单（这才是本流水线的产出）==="
-          grep -E "^[^ ]+:[0-9]+:[0-9]+: (error|warning):" build.log | sort -u || echo "（无）"
+          LOGS="build.log"
+          if [ -f build-release.log ]; then LOGS="$LOGS build-release.log"; fi
+          echo "=== 错误 / 警告清单（Debug + Release 两份日志）==="
+          grep -hE "^[^ ]+:[0-9]+:[0-9]+: (error|warning):" $LOGS | sort -u || echo "（无）"
           echo "=== 计数 ==="
-          echo "error:   $(grep -cE ': error:'   build.log || true)"
-          echo "warning: $(grep -cE ': warning:' build.log || true)"
+          echo "error:   $(cat $LOGS | grep -cE ': error:' || true)"
+          echo "warning: $(cat $LOGS | grep -cE ': warning:' || true)"
 
       # 绿勾只回答"编译过了吗"，不回答"干净吗"。
       # 没有这条闸门，下面那句「0 warning」迟早变成一句没人负责的假话。
       - name: 把 warning 也当失败（本工程承诺 0 警告）
         if: success()
         run: |
-          N=$(grep -cE ': warning:' build.log || true)
+          N=$(cat build.log build-release.log 2>/dev/null | grep -cE ': warning:' || true)
           if [ "$N" != "0" ]; then
             echo "::error::$N 条 warning —— 清单见上面「错误 / 警告清单」那段。"
             exit 1
           fi
           echo "✓ warning 0 条 —— 与文档里的承诺一致"
-        # 注意两点：
-        #   1. 它 grep 的是 build.log（只有 xcodebuild 的输出），
-        #      不能 grep job 日志 —— 后者混着 GitHub 自己的 Node/punycode 弃用警告，会把闸门误触成红；
-        #   2. 用 if: success()，编译已经失败时不要再加一条同样红的步骤盖住真正的错误清单。
+        # 注意三点：
+        #   1. 它 grep 的是 **xcodebuild 的两份日志**（Debug + Release），
+        #      不是 job 日志 —— 后者混着 GitHub 自己的 Node/punycode 弃用警告，会把闸门误触成红；
+        #   2. 用 if: success()，编译已经失败时不要再加一条同样红的步骤盖住真正的错误清单；
+        #   3. Release 是**另一套配置**，它可能报出 Debug 不报的警告 —— 那正是要拦住的东西
 
       # 这一条是"闭环"的关键：把清单回写成 commit 评论。
       # 为什么不用 artifact：artifact 必须鉴权才能下载，而 commit 评论是**公开可读**的。
@@ -90,9 +172,11 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          ERRN=$(grep -cE ': error:'   build.log || true)
-          WARN=$(grep -cE ': warning:' build.log || true)
-          grep -E "^[^ ]+:[0-9]+:[0-9]+: (error|warning):" build.log | sort -u | head -150 > list.txt || true
+          LOGS="build.log"
+          if [ -f build-release.log ]; then LOGS="$LOGS build-release.log"; fi
+          ERRN=$(cat $LOGS | grep -cE ': error:'   || true)
+          WARN=$(cat $LOGS | grep -cE ': warning:' || true)
+          grep -hE "^[^ ]+:[0-9]+:[0-9]+: (error|warning):" $LOGS | sort -u | head -150 > list.txt || true
           python3 -c 'import json,sys;b=open("list.txt",encoding="utf-8",errors="replace").read().strip() or "(没有 error / warning 行)";f=chr(96)*3;json.dump({"body":"CI auto-report | error "+sys.argv[1]+" / warning "+sys.argv[2]+"\n\n"+f+"\n"+b+"\n"+f+"\n"},open("payload.json","w",encoding="utf-8"))' "$ERRN" "$WARN"
           curl -sS -X POST \
             -H "Authorization: Bearer $GH_TOKEN" \
@@ -101,6 +185,18 @@ jobs:
             --data @payload.json \
             "https://api.github.com/repos/${GITHUB_REPOSITORY}/commits/${GITHUB_SHA}/comments" > /dev/null
           echo "已回写 commit 评论：${GITHUB_SHA}"
+
+      # ⚠️ IPA 单独放一个 artifact，**不要和日志混在一起**：
+      # 用户要下的就是它，混进去之后"哪个是能装的包"就变成一道阅读题了。
+      # 注意：GitHub 的 artifact **本身是个 zip**，解开之后才是
+      # `EleseCattery-unsigned.ipa` —— 拖进 Sideloadly 的必须是解压后的 .ipa。
+      - name: 上传 IPA（给 Sideloadly）
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: EleseCattery-ipa
+          path: EleseCattery-unsigned.ipa
+          if-no-files-found: warn
 
       - name: 上传构建日志与"图标证据"
         if: always()
@@ -115,6 +211,7 @@ jobs:
           # 而这两件事的差别，要等用户装到手机上（看到一个空白图标）才发现 —— 太晚了。
           path: |
             build.log
+            build-release.log
             build/Build/Products/Debug-iphoneos/EleseCattery.app/Info.plist
             build/Build/Products/Debug-iphoneos/EleseCattery.app/Assets.car
             build/Build/Products/Debug-iphoneos/EleseCattery.app/AppIcon*.png
