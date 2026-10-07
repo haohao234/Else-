@@ -102,8 +102,25 @@ set /p REPOURL="   repo url: "
 if not defined REPOURL goto :fail
 > "%URLFILE%" echo %REPOURL%
 :have_url
+rem ---- 归一化 .push-url：清掉 BOM 与首尾空白 ----
+rem 为什么非做不可：写这个文件的不一定是我们（Windows PowerShell 的 -Encoding utf8
+rem 就会写出带 BOM 的 UTF-8）。cmd 读进来时，第一个字符是那个看不见的 BOM，
+rem git 收到的就是 "<BOM>https"，于是报：
+rem     fatal: protocol 'https' is not supported
+rem 这个错看起来像"协议不支持"，其实只是有个隐形字符 —— 靠肉眼查不出来。
+powershell -NoProfile -Command "$p='%URLFILE%'; $u=[IO.File]::ReadAllText($p); $u=$u.Trim([char]0xFEFF,[char]0x20,[char]0x09,[char]0x0D,[char]0x0A); [IO.File]::WriteAllText($p,$u,(New-Object Text.UTF8Encoding($false)))" >nul 2>&1
+set "REPOURL="
+for /f "usebackq tokens=* delims=" %%V in ("%URLFILE%") do if not defined REPOURL set "REPOURL=%%V"
+set "HEAD2=%REPOURL:~0,2%"
+if /i "%HEAD2%"=="ht" goto :url_ok
+if /i "%HEAD2%"=="gi" goto :url_ok
+echo   [X] This does not look like a repo url: [%REPOURL%]
+echo       Expected something starting with https:// or git@
+del "%URLFILE%" >nul 2>&1
+goto :fail
+:url_ok
 echo   %REPOURL%
-echo %REPOURL% >> "%LOG%" 2>&1
+echo url = %REPOURL% >> "%LOG%" 2>&1
 echo.
 
 echo [6/8] probing the target ...
