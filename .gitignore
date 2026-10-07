@@ -15,6 +15,9 @@ build/
 *.log
 build.log
 
+# 安装包落地目录（给 Sideloadly 用的 .ipa 放这里；*.ipa 上面已忽略）
+dist/
+
 # 本机/工具产物
 .DS_Store
 Thumbs.db
