@@ -35,6 +35,7 @@ struct CatDetailView: View {
                      trailing: AnyView(editLink(cat))) {
                 headerCard(cat)
                 factsCard(cat)
+                remindersSection
                 breedingsSection
                 dangerZone(cat)
             }
@@ -104,7 +105,46 @@ struct CatDetailView: View {
         }
     }
 
-    // MARK: ③ 它参与过什么
+    // MARK: ③ 它有什么待办
+
+    /// 提醒**挂在猫身上**才活得下去：猫舍里同时好几只，
+    /// 一个不带主语的"驱虫"过一周就没人认得出是给谁的。
+    /// 所以详情页是"新增提醒"的第二入口（第一入口在提醒页的「+」）。
+    private var remindersSection: some View {
+        let open = store.openReminders(of: catID)
+        return VStack(spacing: DS.Space.s) {
+            DSSectionHeader(title: "它的待办")
+            DSActionRow(systemName: "bell.badge",
+                        title: "给它加个提醒",
+                        subtitle: open.isEmpty ? "疫苗 / 驱虫 / 称重 / 预产期" : "已关联 \(open.count) 条",
+                        showsChevron: true,
+                        route: .reminderNew(catID: catID))
+            ForEach(open.prefix(3)) { reminder in
+                DSListRow {
+                    let overdue = reminder.urgency == .overdue
+                    DSIconTile(systemName: reminder.kind.symbol,
+                               tint: overdue ? DS.alert : DS.primary,
+                               background: overdue ? DS.alertSoft : DS.surfaceSoft)
+                    VStack(alignment: .leading, spacing: DS.Space.xxs) {
+                        Text(reminder.title).font(DS.Typo.rowTitle).foregroundStyle(DS.ink)
+                        Text(reminder.subtitle).font(DS.Typo.caption).foregroundStyle(DS.inkTertiary)
+                    }
+                    Spacer(minLength: DS.Space.s)
+                    DSStatusChip(text: reminder.dueLabel.text,
+                                 tone: reminder.dueLabel.isOverdue ? .alert : .archived)
+                }
+            }
+            if open.count > 3 {
+                Text("还有 \(open.count - 3) 条，到「提醒通知」里看全部")
+                    .font(.system(size: 11))
+                    .foregroundStyle(DS.inkFaint)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal, DS.Space.xxs)
+            }
+        }
+    }
+
+    // MARK: ④ 它参与过什么
 
     private var breedingsSection: some View {
         VStack(spacing: DS.Space.s) {
@@ -148,7 +188,7 @@ struct CatDetailView: View {
         }
     }
 
-    // MARK: ④ 危险操作
+    // MARK: ⑤ 危险操作
 
     private func dangerZone(_ cat: Cat) -> some View {
         VStack(spacing: DS.Space.s) {

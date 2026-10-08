@@ -177,7 +177,11 @@ struct DSNotesField: View {
 // MARK: 设置 / 列表里的行
 
 /// 可点行：图标底 + 标题 + 说明 + 右侧值/箭头。
-/// 用于设置页与详情页里"跳去别处"或"执行一个动作"的条目。
+/// 两种用法：
+///   · 给 `action` —— 执行一个动作（设置页里那些）
+///   · 给 `route`  —— 跳到别处（走 NavigationLink，而不是手改导航栈）
+/// 为什么支持第二种：`navigationDestination` 是**值路由**，
+/// 用 action 里手动 push 会绕开它，日子久了"这屏能从哪进"就没人说得清了。
 struct DSActionRow: View {
     let systemName: String
     let title: String
@@ -185,38 +189,49 @@ struct DSActionRow: View {
     var detail: String? = nil
     var isDestructive: Bool = false
     var showsChevron: Bool = true
-    var action: () -> Void
+    var route: AppRoute? = nil
+    var action: () -> Void = { }
 
     private var titleColor: Color { isDestructive ? DS.alert : DS.ink }
     private var tileTint: Color { isDestructive ? DS.alert : DS.primary }
     private var tileBG: Color { isDestructive ? DS.alertSoft : DS.surfaceSoft }
 
     var body: some View {
-        Button(action: action) {
-            HStack(spacing: DS.Space.m) {
-                DSIconTile(systemName: systemName, tint: tileTint, background: tileBG)
-                VStack(alignment: .leading, spacing: DS.Space.xxs) {
-                    Text(title).font(DS.Typo.rowTitle).foregroundStyle(titleColor)
-                    if let subtitle {
-                        Text(subtitle).font(DS.Typo.caption).foregroundStyle(DS.inkTertiary)
-                    }
-                }
-                Spacer(minLength: DS.Space.s)
-                if let detail {
-                    Text(detail).font(DS.Typo.caption).foregroundStyle(DS.inkTertiary)
-                }
-                if showsChevron {
-                    Image(systemName: "chevron.right")
-                        .font(.system(size: 12, weight: .semibold))
-                        .foregroundStyle(DS.inkFaint)
+        if let route {
+            NavigationLink(value: route) { content }
+                .buttonStyle(.plain)
+        } else {
+            Button(action: action) { content }
+                .buttonStyle(.plain)
+        }
+    }
+
+    private var content: some View {
+        HStack(spacing: DS.Space.m) {
+            DSIconTile(systemName: systemName, tint: tileTint, background: tileBG)
+            VStack(alignment: .leading, spacing: DS.Space.xxs) {
+                Text(title).font(DS.Typo.rowTitle).foregroundStyle(titleColor)
+                if let subtitle {
+                    Text(subtitle)
+                        .font(DS.Typo.caption)
+                        .foregroundStyle(DS.inkTertiary)
+                        .multilineTextAlignment(.leading)
                 }
             }
-            .padding(.vertical, DS.Space.m)
-            .padding(.horizontal, DS.Space.m)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .dsRowSurface()
+            Spacer(minLength: DS.Space.s)
+            if let detail {
+                Text(detail).font(DS.Typo.caption).foregroundStyle(DS.inkTertiary)
+            }
+            if showsChevron {
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(DS.inkFaint)
+            }
         }
-        .buttonStyle(.plain)
+        .padding(.vertical, DS.Space.m)
+        .padding(.horizontal, DS.Space.m)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .dsRowSurface()
     }
 }
 

@@ -13,17 +13,29 @@ import UserNotifications
 
 struct RemindersView: View {
     @EnvironmentObject private var store: AppStore
+    @EnvironmentObject private var nav: AppNav
     @Environment(\.dismiss) private var dismiss
 
     @State private var authStatus: UNAuthorizationStatus = .notDetermined
     @State private var showDone = false
 
     var body: some View {
-        DSScreen(title: "提醒通知", onBack: { dismiss() }) {
+        DSScreen(title: "提醒通知",
+                 onBack: { dismiss() },
+                 trailing: AnyView(addLink)) {
             notificationCard
             if store.openReminders.isEmpty {
                 emptyState
             } else {
+                HStack(spacing: DS.Space.xxs) {
+                    Image(systemName: "hand.tap")
+                        .font(.system(size: 10))
+                    Text("点一下 = 完成 · 长按 = 改日期或删除")
+                        .font(.system(size: 11))
+                    Spacer(minLength: 0)
+                }
+                .foregroundStyle(DS.inkFaint)
+                .padding(.horizontal, DS.Space.xxs)
                 section(.overdue)
                 section(.today)
                 section(.thisWeek)
@@ -31,6 +43,17 @@ struct RemindersView: View {
             doneSection
         }
         .onAppear(perform: refreshAuth)
+    }
+
+    private var addLink: some View {
+        NavigationLink(value: AppRoute.reminderNew(catID: nil)) {
+            Image(systemName: "plus")
+                .font(.system(size: 16, weight: .semibold))
+                .foregroundStyle(.white)
+                .frame(width: 36, height: 36)
+                .background(DS.primary, in: RoundedRectangle(cornerRadius: DS.Radius.iconButton, style: .continuous))
+        }
+        .buttonStyle(.plain)
     }
 
     // MARK: 通知状态
@@ -116,6 +139,21 @@ struct RemindersView: View {
             }
         }
         .buttonStyle(.plain)
+        // 长按菜单用来"改 / 删"：把这两个动作放在菜单里，而不是往行上再加两个按钮 ——
+        // 一行的主动作只能有一个（这里是"完成"），其余的藏进长按是 iOS 的常规语言。
+        .contextMenu {
+            Button {
+                nav.push(.reminderEdit(reminder.id))
+            } label: {
+                Label("改日期或说明", systemImage: "calendar")
+            }
+            Button(role: .destructive) {
+                store.deleteReminder(id: reminder.id)
+                NotificationService.reschedule(reminders: store.data.reminders)
+            } label: {
+                Label("删除这条提醒", systemImage: "trash")
+            }
+        }
     }
 
     // MARK: 已完成
@@ -172,8 +210,10 @@ struct RemindersView: View {
             Spacer(minLength: DS.Space.xxl * 2)
             DSEmptyState(systemName: "bell",
                          title: "眼下没有待办",
-                         message: "疫苗、驱虫、称重、B 超、预产期都会出现在这里\n做完点一下就能划掉",
-                         hint: "提醒跟着猫走：在种猫详情里能看到它名下的全部待办")
+                         message: "疫苗、驱虫、称重、B 超、预产期都可以加进来\n做完点一下就能划掉",
+                         hint: "提醒跟着猫走：在种猫详情里能看到它名下的待办") {
+                DSPrimaryLink(title: "新增提醒", route: .reminderNew(catID: nil))
+            }
             Spacer(minLength: 0)
         }
     }

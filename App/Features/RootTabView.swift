@@ -36,6 +36,20 @@ final class AppNav: ObservableObject {
     func go(to tab: String) {
         self.tab = tab
     }
+
+    /// 往**当前 tab** 的栈里压一屏。
+    /// 为什么需要它：`NavigationLink(value:)` 只能在视图树里用；
+    /// 而 `.contextMenu`（长按菜单）这类地方拿不到那个环境 —— 于是需要程序化压栈。
+    /// 不判断当前 tab 就直接改某个 path 的话，切到别的 tab 会发现屏幕被"莫名"压了一屏。
+    func push(_ route: AppRoute) {
+        switch tab {
+        case "home": homePath.append(route)
+        case "cats": catsPath.append(route)
+        case "breeding": breedingPath.append(route)
+        case "finance": financePath.append(route)
+        default: morePath.append(route)
+        }
+    }
 }
 
 struct RootTabView: View {

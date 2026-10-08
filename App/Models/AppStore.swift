@@ -254,6 +254,16 @@ final class AppStore: ObservableObject {
         save()
     }
 
+    func deleteReminder(id: UUID) {
+        data.reminders.removeAll { $0.id == id }
+        save()
+    }
+
+    /// 某只猫名下的待办（含逾期），按到期日升序
+    func openReminders(of catID: UUID) -> [Reminder] {
+        openReminders.filter { $0.catID == catID }
+    }
+
     /// 未完成提醒，按截止日期升序（逾期的自然排在最前）
     var openReminders: [Reminder] {
         data.reminders.filter { !$0.isDone }.sorted { $0.dueDate < $1.dueDate }

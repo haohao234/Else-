@@ -19,6 +19,8 @@ enum AppRoute: Hashable {
     case breedingEdit(UUID?)     // nil = 新建配对
     case billEdit(UUID?)         // nil = 记一笔
     case reminders
+    case reminderNew(catID: UUID?)   // nil = 不预选猫（从提醒页加）
+    case reminderEdit(UUID)
     case settings
 }
 
@@ -34,6 +36,8 @@ extension View {
             case .breedingEdit(let id): BreedingEditView(editingID: id)
             case .billEdit(let id): BillEditView(editingID: id)
             case .reminders: RemindersView()
+            case .reminderNew(let catID): ReminderEditView(editingID: nil, presetCatID: catID)
+            case .reminderEdit(let id): ReminderEditView(editingID: id, presetCatID: nil)
             case .settings: SettingsView()
             }
         }
