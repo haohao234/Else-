@@ -408,6 +408,16 @@ enum Money {
 
     /// -¥328（账单行）
     static func signedYuan(_ value: Double) -> String { "-¥" + plain(abs(value)) }
+
+    /// 日历格子里的那种金额：**不带 ¥、不带千分位、必要时才缩写**。
+    ///
+    /// 为什么要单独一个：格子只有约 50pt 宽，¥ 和逗号都是纯占用；
+    /// 而缩写是**有代价的**（看不准），所以只在真的塞不下时才缩（≥1000 才用 k）。
+    static func compact(_ value: Double) -> String {
+        if value >= 10000 { return String(format: "%.0fk", value / 1000) }
+        if value >= 1000 { return String(format: "%.1fk", value / 1000) }
+        return String(format: "%.0f", value)
+    }
 }
 
 enum Formatters {

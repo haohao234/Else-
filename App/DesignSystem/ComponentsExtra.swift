@@ -380,6 +380,125 @@ struct DSTimelineStep: View {
     }
 }
 
+// MARK: 月历
+
+/// 月历：每格显示"这天的支出合计"，点一天只看那天的账。
+///
+/// 三个刻意的决定：
+///  1. **周首随系统日历**（中国习惯周一开头），不写死 —— 写死会让别的地区看着不对劲；
+///  2. 格子里的数字**不带 ¥、不带千分位**（一格只有约 50pt 宽），
+///     金额 ≥1000 才缩写（1.2k）—— 缩写是有代价的（看不准），不到塞不下不用；
+///  3. 没有支出的日子**留白，不写 0** —— 满屏的 0 会把"哪天真的花了钱"这个信号淹掉。
+struct DSMonthCalendar: View {
+    let month: Date
+    let amounts: [Int: Double]
+    @Binding var selectedDay: Int?
+
+    private var cal: Calendar { Calendar.current }
+
+    private var columns: [GridItem] {
+        Array(repeating: GridItem(.flexible(), spacing: DS.Space.xxs), count: 7)
+    }
+
+    /// 周首按系统日历排（zh_CN 是周一）
+    private var weekdaySymbols: [String] {
+        let base = ["日", "一", "二", "三", "四", "五", "六"]
+        let first = max(0, min(6, cal.firstWeekday - 1))
+        return Array(base[first...]) + Array(base[..<first])
+    }
+
+    /// 这个月要画哪些格子：前面补 nil 占位，让 1 号落在正确的星期几下面
+    private var cells: [Int?] {
+        guard let range = cal.range(of: .day, in: .month, for: month),
+              let firstDay = cal.date(from: cal.dateComponents([.year, .month], from: month))
+        else { return [] }
+        let weekday = cal.component(.weekday, from: firstDay)
+        let leading = (weekday - cal.firstWeekday + 7) % 7
+        return Array(repeating: nil, count: leading) + range.map { Optional($0) }
+    }
+
+    var body: some View {
+        VStack(spacing: DS.Space.xs) {
+            LazyVGrid(columns: columns, spacing: DS.Space.xxs) {
+                ForEach(weekdaySymbols.indices, id: \.self) { index in
+                    Text(weekdaySymbols[index])
+                        .font(.system(size: 10, weight: .medium))
+                        .foregroundStyle(DS.inkFaint)
+                        .frame(maxWidth: .infinity)
+                }
+                ForEach(cells.indices, id: \.self) { index in
+                    cell(cells[index])
+                }
+            }
+            HStack(spacing: DS.Space.xs) {
+                Text("格子里的数字是当天支出（元）")
+                Spacer(minLength: 0)
+                if selectedDay != nil {
+                    Text("再点一下取消筛选")
+                }
+            }
+            .font(.system(size: 10))
+            .foregroundStyle(DS.inkFaint)
+        }
+    }
+
+    @ViewBuilder
+    private func cell(_ day: Int?) -> some View {
+        if let day {
+            let amount = amounts[day] ?? 0
+            let isSelected = selectedDay == day
+            let isToday = cal.isDateInToday(date(day))
+            Button {
+                selectedDay = isSelected ? nil : day
+            } label: {
+                VStack(spacing: 1) {
+                    Text("\(day)")
+                        .font(.system(size: 12, weight: isToday ? .bold : .regular))
+                        .foregroundStyle(dayColor(isSelected: isSelected, isToday: isToday))
+                    // 用空格占位而不是条件渲染：否则有支出的格子比别的高一行，
+                    // 整张日历会变得高低不平（这是网格，不是列表）。
+                    Text(amount > 0 ? Money.compact(amount) : " ")
+                        .font(.system(size: 9, design: .monospaced))
+                        .foregroundStyle(isSelected ? Color.white : DS.inkSecondary)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.7)
+                }
+                .frame(maxWidth: .infinity)
+                .frame(height: 40)
+                .background(dayBackground(amount: amount, isSelected: isSelected),
+                            in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+                .overlay {
+                    if isToday && !isSelected {
+                        RoundedRectangle(cornerRadius: 8, style: .continuous)
+                            .stroke(DS.primary.opacity(0.55), lineWidth: 1)
+                    }
+                }
+            }
+            .buttonStyle(.plain)
+        } else {
+            Color.clear.frame(height: 40)
+        }
+    }
+
+    private func date(_ day: Int) -> Date {
+        var comps = cal.dateComponents([.year, .month], from: month)
+        comps.day = day
+        return cal.date(from: comps) ?? month
+    }
+
+    private func dayColor(isSelected: Bool, isToday: Bool) -> Color {
+        if isSelected { return .white }
+        if isToday { return DS.primary }
+        return DS.ink
+    }
+
+    private func dayBackground(amount: Double, isSelected: Bool) -> AnyShapeStyle {
+        if isSelected { return AnyShapeStyle(DS.primary) }
+        if amount > 0 { return AnyShapeStyle(DS.surfaceSoft) }
+        return AnyShapeStyle(Color.clear)
+    }
+}
+
 // MARK: 警示
 
 /// 警示卡：**只用于"用户必须知道、并且要采取动作"的事**（不是普通提示）。

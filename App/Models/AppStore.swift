@@ -320,6 +320,39 @@ final class AppStore: ObservableObject {
             .sorted { $0.amount > $1.amount }
     }
 
+    /// 某月**每天的支出合计**（键 = 几号，1…31）。
+    ///
+    /// 放在 store 而不是各视图里：日历格子和"按天分组的明细"都要用它 ——
+    /// 各算一遍迟早出现两套口径（一个按 startOfDay、一个按 component(.day)），
+    /// 于是**同一天在两处显示不同的数字**。这类"同一个事实两套算法"的 bug 最难查，
+    /// 因为每一处单看都对。
+    func dailyTotals(in month: Date) -> [Int: Double] {
+        var out: [Int: Double] = [:]
+        let cal = Calendar.current
+        for bill in bills(in: month) {
+            out[cal.component(.day, from: bill.date), default: 0] += bill.amount
+        }
+        return out
+    }
+
+    /// 某月按天分组的账单（新的一天在前），供"明细"按日展示。
+    /// 每天带上自己的小计 —— 这就是用户要的"每日的记录情况"。
+    ///
+    /// ⚠️ 这里刻意**拆成多行 + 显式循环**，而不是一个链式表达式：
+    /// 一个 .map 里塞元组字面量 + 嵌套闭包（内层还用 $0/$1）是 Swift 类型检查器
+    /// 最容易超时/报怪的写法。拆开之后既好读，也不会让编译器猜。
+    func dailyGroups(in month: Date) -> [(day: Int, bills: [Bill], total: Double)] {
+        let cal = Calendar.current
+        let grouped = Dictionary(grouping: bills(in: month)) { cal.component(.day, from: $0.date) }
+        var out: [(day: Int, bills: [Bill], total: Double)] = []
+        for (day, items) in grouped {
+            let ordered = items.sorted { $0.date > $1.date }
+            let total = ordered.reduce(0.0) { $0 + $1.amount }
+            out.append((day: day, bills: ordered, total: total))
+        }
+        return out.sorted { $0.day > $1.day }
+    }
+
     // MARK: 提醒
 
     func upsert(reminder: Reminder) {

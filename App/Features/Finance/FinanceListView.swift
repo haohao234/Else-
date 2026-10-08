@@ -14,6 +14,9 @@ import SwiftUI
 struct FinanceListView: View {
     @EnvironmentObject private var store: AppStore
     @State private var monthOffset = 0
+    /// 在月历上选中的"几号"。选中后明细只显示那一天 ——
+    /// 这就是"每日的记录情况"：从"看整月"下钻到"看某一天"，而不是再开一屏。
+    @State private var selectedDay: Int?
 
     private var calendar: Calendar { Calendar.current }
 
@@ -58,10 +61,16 @@ struct FinanceListView: View {
 
     private var monthBar: some View {
         DSMonthSwitcher(title: Formatters.monthTitle.string(from: month),
-                        onPrev: { monthOffset -= 1 },
-                        onNext: { if monthOffset < 0 { monthOffset += 1 } })
+                        onPrev: { monthOffset -= 1; clearDaySelection() },
+                        onNext: { if monthOffset < 0 { monthOffset += 1; clearDaySelection() } })
             .padding(.horizontal, DS.Space.screenH)
             .padding(.bottom, DS.Space.m)
+    }
+
+    /// 换月必须清掉选中日 —— 否则筛选停在"上个月的 8 号"，
+    /// 而新月份里那天可能没有记录，用户会看到一张莫名其妙空着的明细。
+    private func clearDaySelection() {
+        selectedDay = nil
     }
 
     @ViewBuilder
@@ -72,12 +81,24 @@ struct FinanceListView: View {
             ScrollView {
                 VStack(spacing: DS.Space.l) {
                     totalCard
+                    calendarCard
                     breakdownCard
                     listSection
                 }
                 .padding(.horizontal, DS.Space.screenH)
                 .padding(.bottom, DS.Space.xxl * 2)
             }
+        }
+    }
+
+    // MARK: 月历（每天的支出，一眼看形状）
+
+    private var calendarCard: some View {
+        DSCard {
+            DSSectionHeader(title: "月历")
+            DSMonthCalendar(month: month,
+                            amounts: store.dailyTotals(in: month),
+                            selectedDay: $selectedDay)
         }
     }
 
@@ -137,12 +158,45 @@ struct FinanceListView: View {
         return String(format: "%.0f%%", amount / total * 100)
     }
 
-    // MARK: ③ 每一笔
+    // MARK: ③ 每一笔（按天分组，每天都带自己的小计）
 
     private var listSection: some View {
+        let groups = store.dailyGroups(in: month)
+        let shown = selectedDay.map { day in groups.filter { $0.day == day } } ?? groups
+        return VStack(spacing: DS.Space.l) {
+            if let selectedDay {
+                DSSectionHeader(title: "\(selectedDay) 日的记录",
+                                actionTitle: "显示整月",
+                                onAction: clearDaySelection)
+            } else {
+                DSSectionHeader(title: "明细")
+            }
+            ForEach(shown.indices, id: \.self) { index in
+                dayBlock(shown[index])
+            }
+        }
+    }
+
+    /// 一天一组：上面是「几号 · 几笔 · 小计」，下面才是那天的每笔账。
+    /// 这个"日小计行"就是用户要的「每日的记录情况」——
+    /// 它把"这一天花了多少"从"要自己把几行加起来"变成一眼可见。
+    private func dayBlock(_ group: (day: Int, bills: [Bill], total: Double)) -> some View {
         VStack(spacing: DS.Space.s) {
-            DSSectionHeader(title: "明细")
-            ForEach(bills) { bill in
+            HStack(spacing: DS.Space.s) {
+                Text("\(group.day) 日")
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(DS.inkSecondary)
+                Text("\(group.bills.count) 笔")
+                    .font(.system(size: 11))
+                    .foregroundStyle(DS.inkFaint)
+                Spacer(minLength: DS.Space.s)
+                Text(Money.yuan(group.total))
+                    .font(.system(size: 12, weight: .semibold, design: .monospaced))
+                    .foregroundStyle(DS.inkSecondary)
+            }
+            .padding(.horizontal, DS.Space.xxs)
+
+            ForEach(group.bills) { bill in
                 NavigationLink(value: AppRoute.billEdit(bill.id)) {
                     DSListRow {
                         DSIconTile(systemName: bill.category.symbol,
