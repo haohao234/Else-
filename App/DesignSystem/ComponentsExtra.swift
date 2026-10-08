@@ -380,6 +380,48 @@ struct DSTimelineStep: View {
     }
 }
 
+// MARK: 警示
+
+/// 警示卡：**只用于"用户必须知道、并且要采取动作"的事**（不是普通提示）。
+///
+/// 为什么单做一个组件、而不是随手写成一张红卡片：
+/// 警示色是这套设计里**唯一保留给"需关注"**的颜色（见 Tokens 里的约定）。
+/// 组件化之后，它的用途就被框住了 —— 谁想拿它当装饰用，会先撞上这段注释。
+///
+/// 语气要求：**给下一步**，不是只报告坏消息。
+struct DSAlertCard: View {
+    let title: String
+    let message: String
+    var hint: String? = nil
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: DS.Space.s) {
+            HStack(spacing: DS.Space.s) {
+                Image(systemName: "exclamationmark.triangle.fill")
+                    .font(.system(size: 15))
+                    .foregroundStyle(DS.alert)
+                Text(title)
+                    .font(DS.Typo.cardTitle)
+                    .foregroundStyle(DS.alert)
+                Spacer(minLength: 0)
+            }
+            Text(message)
+                .font(DS.Typo.body)
+                .foregroundStyle(DS.ink)
+                .fixedSize(horizontal: false, vertical: true)
+            if let hint {
+                Text(hint)
+                    .font(DS.Typo.caption)
+                    .foregroundStyle(DS.inkTertiary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .padding(DS.Space.xl)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(DS.alertSoft, in: RoundedRectangle(cornerRadius: DS.Radius.cardLarge, style: .continuous))
+    }
+}
+
 // MARK: 记账
 
 /// 金额输入：¥ 符号固定在前，数字大号等宽。

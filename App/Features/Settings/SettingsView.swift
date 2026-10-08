@@ -19,6 +19,7 @@ struct SettingsView: View {
     @State private var backups: [URL] = []
     @State private var showRestoreList = false
     @State private var showImporter = false
+    @State private var showDrillConfirm = false
     /// 待恢复的备份 —— **已经把内容读进内存**，而不是存 URL。
     /// 两个原因：① 从「文件」App 导入拿到的是 security-scoped URL，
     /// 出了那次回调就失效，等用户点确认时再去读必然失败；
@@ -44,6 +45,9 @@ struct SettingsView: View {
 
     var body: some View {
         DSScreen(title: "设置", onBack: { dismiss() }) {
+            if let problem = store.loadProblem {
+                loadProblemCard(problem)
+            }
             if let message {
                 banner(message)
             }
@@ -52,6 +56,7 @@ struct SettingsView: View {
                 restoreListCard
             }
             reminderCard
+            selfCheckCard
             aboutCard
         }
         .onAppear(perform: refresh)
@@ -171,6 +176,54 @@ struct SettingsView: View {
         }
     }
 
+    // MARK: 数据读不出来时的报警（这一条是这个 App 能出的最严重的问题）
+
+    /// 措辞要求：**先讲清"你的东西没被删"，再讲下一步。**
+    /// 数据类 App 出这种问题时，用户第一反应是"全没了" —— 而事实是它被留档了。
+    /// 先把这句说出来，比任何技术细节都重要。
+    private func loadProblemCard(_ problem: String) -> some View {
+        DSAlertCard(title: "数据文件读不出来",
+                    message: "\(problem)\n\n你的原文件没有被覆盖 —— 我已经把它留档成：\(store.quarantinedFileName ?? "（留档没成功，原文件仍在原处）")",
+                    hint: "现在显示的是空数据。请到「文件」App → 我的 iPhone → Elese的猫舍 → Elese备份 里确认那份留档。\n如果最近做过备份，用上面的「从文件导入备份」把它导回来即可。")
+    }
+
+    // MARK: 自检
+
+    private var selfCheckCard: some View {
+        VStack(spacing: DS.Space.s) {
+            DSSectionHeader(title: "自检")
+            DSActionRow(systemName: "stethoscope",
+                        title: "演练：数据文件损坏时会怎样",
+                        subtitle: "会先自动备份，再把数据文件写成坏的；需要手动重启一次 App",
+                        showsChevron: false) {
+                showDrillConfirm = true
+            }
+            Text("为什么要演练：一个没被走过一遍的安全网，不算安全网。这一步不会丢数据 —— 演练前会自动做一份备份，坏文件也会被留档。")
+                .font(DS.Typo.caption)
+                .foregroundStyle(DS.inkFaint)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .alert("演练：故意把数据文件写坏？", isPresented: $showDrillConfirm) {
+            Button("开始演练", role: .destructive) { runDrill() }
+            Button("取消", role: .cancel) { }
+        } message: {
+            Text("会先自动创建一份备份，再把数据文件写成非法内容。\n然后请手动完全退出 App 再打开 —— 你应当看到红色警示、数据变空；\n最后用「从 App 内备份恢复」把数据拿回来。")
+        }
+    }
+
+    /// 演练：**先备份，再故意写坏**。顺序不能反 —— 先写坏就等于拿用户的数据冒险。
+    private func runDrill() {
+        do {
+            let folder = try BackupService.folder(in: store.documentsDirectory)
+            let url = try BackupService.createBackup(data: try store.snapshotData(), folder: folder)
+            try Data("这不是合法的 JSON".utf8).write(to: store.storeFileURL, options: .atomic)
+            message = "演练准备完成：已备份为「\(url.lastPathComponent)」，数据文件已写成坏内容。\n现在请完全退出 App（上滑关掉它）再重新打开。"
+            refresh()
+        } catch {
+            message = "演练没能开始：\(error.localizedDescription)"
+        }
+    }
+
     // MARK: 提醒
 
     private var reminderCard: some View {
@@ -279,6 +332,8 @@ struct SettingsView: View {
             let restored = try BackupService.decode(payload.data)
             store.replaceAll(with: restored)
             NotificationService.reschedule(reminders: restored.reminders)
+            // 恢复成功 = 那个问题已经处理完了，红框该收起来（否则它会一直挂在那里变成噪音）
+            store.clearLoadProblem()
             message = "已恢复「\(payload.name)」：\(restored.cats.count) 只猫 · \(restored.breedings.count) 条繁育 · \(restored.bills.count) 笔账 · \(restored.reminders.count) 条提醒。"
         } catch {
             message = "恢复失败：这份内容解不出来（\(error.localizedDescription)）"

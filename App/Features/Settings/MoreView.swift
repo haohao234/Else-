@@ -19,6 +19,13 @@ struct MoreView: View {
             DSScreenTitle(title: "更多")
             ScrollView {
                 VStack(spacing: DS.Space.l) {
+                    // 数据出问题时，在"更多"这一屏也要能看到 ——
+                    // 设置页只有一个入口，而这件事等不了用户自己找过去。
+                    if let problem = store.loadProblem {
+                        DSAlertCard(title: "数据文件读不出来",
+                                    message: problem,
+                                    hint: "处理办法在「设置 · 备份与导出」里（红框那条下面就是）。")
+                    }
                     overviewCard
                     entries
                     promiseCard

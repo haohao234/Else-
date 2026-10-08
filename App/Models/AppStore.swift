@@ -22,6 +22,18 @@ final class AppStore: ObservableObject {
 
     @Published private(set) var data: AppData
 
+    /// 数据文件**读不出来**时，这里会有一句人话说明；正常情况下是 nil。
+    ///
+    /// 为什么必须有它：原来的写法是 `load(...) ?? AppData.sample` ——
+    /// 文件一旦损坏（或将来某次模型改动导致解码失败），用户会看到**示例数据**，
+    /// 而只要他再碰一下任何东西，`save()` 就会把示例数据写回去，
+    /// **把真正的那份文件永久覆盖掉**。
+    /// 对一个把「数据只在本机、你自己能管」当承诺的 App，静默覆盖是最不该有的失败方式。
+    @Published private(set) var loadProblem: String?
+
+    /// 读失败时被**留档**的文件名（在「文件」App → Elese的猫舍 → Elese备份 里能找到）
+    @Published private(set) var quarantinedFileName: String?
+
     let storeDirectory: URL
     let storeFileURL: URL
 
@@ -38,17 +50,77 @@ final class AppStore: ObservableObject {
         try? FileManager.default.createDirectory(at: base, withIntermediateDirectories: true)
         storeDirectory = base
         storeFileURL = base.appendingPathComponent(fileName)
-        // 首次启动灌一份示例数据 —— 让设计稿里的界面状态可以被直接看到
-        data = AppStore.load(from: storeFileURL) ?? AppData.sample
+
+        // ⚠️ 三条路径必须分开，别合并成一句 `?? sample`：
+        //   ① 文件不存在        → 首次启动，灌示例数据（让界面状态能被直接看到）
+        //   ② 文件在且读得出来   → 正常
+        //   ③ 文件在但读不出来   → **留档 + 空数据 + 报警**，绝不拿示例数据顶上
+        if FileManager.default.fileExists(atPath: storeFileURL.path) {
+            switch AppStore.read(from: storeFileURL) {
+            case .success(let loaded):
+                data = loaded
+            case .failure(let reason):
+                data = AppData()
+                loadProblem = reason
+                quarantinedFileName = AppStore.quarantine(storeFileURL)
+            }
+        } else {
+            data = AppData.sample
+        }
+    }
+
+    /// 用户看过报警之后的"知道了"。
+    func clearLoadProblem() {
+        loadProblem = nil
     }
 
     // MARK: 磁盘读写
 
-    private static func load(from url: URL) -> AppData? {
-        guard let raw = try? Data(contentsOf: url) else { return nil }
+    /// 读 + 解析，失败时给出**人话原因** —— 直接把 DecodingError 抛给用户看没有意义。
+    private static func read(from url: URL) -> Result<AppData, String> {
+        let raw: Data
+        do {
+            raw = try Data(contentsOf: url)
+        } catch {
+            return .failure("数据文件读不出来（\(error.localizedDescription)）")
+        }
+        guard !raw.isEmpty else {
+            return .failure("数据文件是空的（0 字节）")
+        }
         let decoder = JSONDecoder()
         decoder.dateDecodingStrategy = .iso8601
-        return try? decoder.decode(AppData.self, from: raw)
+        do {
+            return .success(try decoder.decode(AppData.self, from: raw))
+        } catch {
+            return .failure("数据文件的内容不是本 App 认识的格式")
+        }
+    }
+
+    /// 把读不出来的文件**改名留档 —— 不是删除**。
+    ///
+    /// 为什么留档而不是丢弃：它可能只是"这一版读不懂"（字段变了、被别的东西写过），
+    /// 换一版、或者拿出去看一眼还能救回来。**删除是不可逆的，而这里没有任何理由不可逆。**
+    ///
+    /// 为什么放到 Documents：Application Support 在「文件」App 里看不见，
+    /// 而留档的意义就是"用户能拿到它"。放进已有的「Elese备份」文件夹 ——
+    /// 它本来就是"你可能需要拿回来的东西"待的地方。
+    private static func quarantine(_ url: URL) -> String? {
+        let f = DateFormatter()
+        f.locale = Locale(identifier: "en_US_POSIX")
+        f.dateFormat = "yyyy-MM-dd-HHmm"
+        let name = "store.corrupt-\(f.string(from: Date())).json"
+        let docs = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+        let folder = docs.appendingPathComponent(BackupService.folderName, isDirectory: true)
+        try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        let dest = folder.appendingPathComponent(name)
+        do {
+            try? FileManager.default.removeItem(at: dest)     // 同一分钟重复演练时不撞名
+            try FileManager.default.moveItem(at: url, to: dest)
+            return name
+        } catch {
+            // 连改名都失败（极罕见）：那就**保持原文件不动**，至少不破坏它。
+            return nil
+        }
     }
 
     private static func encode(_ value: AppData) throws -> Data {
