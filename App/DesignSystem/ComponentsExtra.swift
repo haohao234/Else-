@@ -329,6 +329,57 @@ struct DSMenuRow<T: Hashable>: View {
     }
 }
 
+// MARK: 时间线
+
+/// 时间线的一步：圆点 + 竖线 + 标签 + 日期 +（可选）注解。
+///
+/// 为什么用竖线把它们连起来、而不是一行行平铺：**"间隔"本身就是信息** ——
+/// 配种到生产多少天、生产到出窝多少天，猫舍正是靠这两个数判断正不正常的。
+/// 平铺的列表会把间隔藏起来（要靠用户自己减日期）。
+struct DSTimelineStep: View {
+    let title: String
+    let dateText: String
+    var note: String? = nil
+    var isLast: Bool = false
+
+    var body: some View {
+        HStack(alignment: .top, spacing: DS.Space.m) {
+            VStack(spacing: 0) {
+                Circle()
+                    .fill(DS.primary)
+                    .frame(width: 9, height: 9)
+                    .padding(.top, 4)
+                if !isLast {
+                    Rectangle()
+                        .fill(DS.primary.opacity(0.28))
+                        .frame(width: 2)
+                        .frame(maxHeight: .infinity)
+                }
+            }
+            .frame(width: 9)
+
+            VStack(alignment: .leading, spacing: DS.Space.xxs) {
+                HStack(spacing: DS.Space.s) {
+                    Text(title)
+                        .font(DS.Typo.rowTitle)
+                        .foregroundStyle(DS.ink)
+                    Spacer(minLength: DS.Space.s)
+                    Text(dateText)
+                        .font(DS.Typo.rowAmount)
+                        .foregroundStyle(DS.inkSecondary)
+                }
+                if let note {
+                    Text(note)
+                        .font(DS.Typo.caption)
+                        .foregroundStyle(DS.inkTertiary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+            .padding(.bottom, isLast ? 0 : DS.Space.l)
+        }
+    }
+}
+
 // MARK: 记账
 
 /// 金额输入：¥ 符号固定在前，数字大号等宽。

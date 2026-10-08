@@ -41,7 +41,9 @@ struct BreedingDetailView: View {
         if let record {
             DSScreen(title: record.code, onBack: { attemptClose() }) {
                 headerCard(record)
+                datesCard
                 timelineCard
+                costCard
                 extraCard
                 dangerZone
             }
@@ -100,11 +102,11 @@ struct BreedingDetailView: View {
         }
     }
 
-    // MARK: 时间线（这一屏的正文）
+    // MARK: 记录日期（这一屏的正文：事实在这里填）
 
-    private var timelineCard: some View {
+    private var datesCard: some View {
         DSCard {
-            DSSectionHeader(title: "进展")
+            DSSectionHeader(title: "记录日期")
             Text("哪天真的发生了，就在哪天打开这里填一下 —— 阶段会自动跟着走。")
                 .font(DS.Typo.caption)
                 .foregroundStyle(DS.inkTertiary)
@@ -116,6 +118,118 @@ struct BreedingDetailView: View {
                               defaultDate: defaultDueDate)
             DSOptionalDateRow(label: "生产", date: $draft.birthDate)
             DSOptionalDateRow(label: "出窝", date: $draft.weanedDate)
+        }
+    }
+
+    // MARK: 时间线（把填过的事实读成一段经历）
+
+    private var timelineCard: some View {
+        DSCard {
+            DSSectionHeader(title: "时间线")
+            if timelineEntries.isEmpty {
+                Text("还没有填任何日期 —— 上面填一个，这里就会长出来。")
+                    .font(DS.Typo.caption)
+                    .foregroundStyle(DS.inkTertiary)
+                    .fixedSize(horizontal: false, vertical: true)
+            } else {
+                VStack(alignment: .leading, spacing: 0) {
+                    ForEach(timelineEntries.indices, id: \.self) { index in
+                        let entry = timelineEntries[index]
+                        DSTimelineStep(title: entry.title,
+                                       dateText: Formatters.monthDay.string(from: entry.date),
+                                       note: entry.note,
+                                       isLast: index == timelineEntries.count - 1)
+                    }
+                }
+            }
+            if let total = BreedingRecord.totalDays(matedDate: draft.matedDate,
+                                                    weanedDate: draft.weanedDate) {
+                Text("从配对到出窝共 \(total) 天")
+                    .font(DS.Typo.caption)
+                    .foregroundStyle(DS.primary)
+            }
+        }
+    }
+
+    /// 把草稿里填过的日期排成一条时间线（草稿，所以改了立刻反映）✓
+    private var timelineEntries: [TimelineEntry] {
+        var out: [TimelineEntry] = []
+        if let d = draft.matedDate {
+            out.append(TimelineEntry(id: "mated", title: "配对", date: d))
+        }
+        if let d = draft.pregnantDate {
+            let gap = BreedingRecord.gestationDays(matedDate: draft.matedDate, birthDate: d)
+            out.append(TimelineEntry(id: "pregnant", title: "确认怀孕", date: d,
+                                     note: gap.map { "配对后 \($0) 天确认" }))
+        }
+        if let d = draft.expectedDueDate {
+            // 预产期是**计划**，不是事实 —— 所以措辞上要区分开，不然回看时会把计划当成记录。
+            out.append(TimelineEntry(id: "due", title: "预产期（计划）", date: d))
+        }
+        if let d = draft.birthDate {
+            var notes: [String] = []
+            if let g = BreedingRecord.gestationNote(matedDate: draft.matedDate, birthDate: d) { notes.append(g) }
+            if let n = draft.kittenCount { notes.append("产仔 \(n) 只") }
+            out.append(TimelineEntry(id: "birth", title: "生产", date: d,
+                                     note: notes.isEmpty ? nil : notes.joined(separator: " · ")))
+        }
+        if let d = draft.weanedDate {
+            var notes: [String] = []
+            if let n = BreedingRecord.nursingNote(birthDate: draft.birthDate, weanedDate: d) { notes.append(n) }
+            if let n = draft.kittenCount { notes.append("出窝 \(n) 只") }
+            out.append(TimelineEntry(id: "weaned", title: "出窝", date: d,
+                                     note: notes.isEmpty ? nil : notes.joined(separator: " · ")))
+        }
+        return out
+    }
+
+    // MARK: 配对以来的开销（派生，不存）
+
+    /// 配对以来的开销。
+    /// ⚠️ **口径必须写在界面上**：只统计"把公猫或母猫关联进去"的账单。
+    /// 没关联猫的账（比如一袋猫砂）不算 —— 否则这个数字会变成一个说不清来源的数，
+    /// 而说不清来源的数字比没有数字更糟（用户会拿它去做决定）。
+    private var costSummary: (total: Double, count: Int, from: Date, to: Date)? {
+        guard let record, let from = draft.matedDate ?? record.matedDate else { return nil }
+        let to = draft.weanedDate ?? Date()
+        let hit = store.data.bills.filter { bill in
+            guard bill.date >= from, bill.date <= to else { return false }
+            return bill.catIDs.contains(record.motherID) || bill.catIDs.contains(record.fatherID)
+        }
+        guard !hit.isEmpty else { return nil }
+        return (store.total(of: hit), hit.count, from, to)
+    }
+
+    private var costCard: some View {
+        DSCard {
+            DSSectionHeader(title: "配对以来的开销")
+            if let summary = costSummary, let record {
+                HStack(alignment: .firstTextBaseline, spacing: DS.Space.s) {
+                    Text(Money.yuan(summary.total))
+                        .font(DS.Typo.statNumber)
+                        .foregroundStyle(DS.primary)
+                    Spacer(minLength: 0)
+                    Text("\(summary.count) 笔")
+                        .font(DS.Typo.caption)
+                        .foregroundStyle(DS.inkTertiary)
+                }
+                Text("\(Formatters.monthDay.string(from: summary.from)) 起 · 截至 \(Formatters.monthDay.string(from: summary.to))")
+                    .font(DS.Typo.caption)
+                    .foregroundStyle(DS.inkTertiary)
+                Text("只统计把 \(record.motherName) 或 \(record.fatherName) 关联进去的账单；没关联猫的账不算在内。")
+                    .font(DS.Typo.caption)
+                    .foregroundStyle(DS.inkFaint)
+                    .fixedSize(horizontal: false, vertical: true)
+            } else {
+                Text("这段时间还没有关联到这对猫的账单。")
+                    .font(DS.Typo.body)
+                    .foregroundStyle(DS.inkTertiary)
+                    .fixedSize(horizontal: false, vertical: true)
+                Text("在「记一笔」里把猫选上，这里就能看出这一胎大概花了多少。")
+                    .font(DS.Typo.caption)
+                    .foregroundStyle(DS.inkFaint)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
         }
     }
 
@@ -250,4 +364,16 @@ private struct BreedingDraft: Equatable {
         guard !t.isEmpty else { return nil }
         return Int(t)
     }
+}
+
+// MARK: - 时间线上的一步
+//
+// 从草稿**现算**出来，而不是存一份：时间线的内容完全由那五个日期决定，
+// 存一份就等于多了一个会和日期打架的真相（这份代码里已经吃过一次这个亏）。
+
+private struct TimelineEntry: Identifiable {
+    let id: String
+    let title: String
+    let date: Date
+    var note: String? = nil
 }

@@ -271,6 +271,50 @@ struct BreedingRecord: Identifiable, Codable, Hashable {
                                     kittenCount: kittenCount)
     }
 
+    // MARK: 派生：这一胎走了多久
+
+    /// 猫的孕期参考范围（天）。
+    /// ⚠️ 这是**给判断的参考，不是判据** —— 猫的个体差异真实存在（59 天到 70 天都有记录）。
+    /// 所以界面上只会说"偏出参考范围"，**不会报错、不会标红说用户填错了**：
+    /// 拿一个写死的"正常值"去否定用户亲眼看到的事实，是最傲慢的做法。
+    static let gestationReference = 58...72
+
+    /// 配种 → 生产 的天数
+    static func gestationDays(matedDate: Date?, birthDate: Date?) -> Int? {
+        spanDays(from: matedDate, to: birthDate)
+    }
+
+    /// 生产 → 出窝 的天数
+    static func nursingDays(birthDate: Date?, weanedDate: Date?) -> Int? {
+        spanDays(from: birthDate, to: weanedDate)
+    }
+
+    /// 配种 → 出窝 的总天数
+    static func totalDays(matedDate: Date?, weanedDate: Date?) -> Int? {
+        spanDays(from: matedDate, to: weanedDate)
+    }
+
+    private static func spanDays(from: Date?, to: Date?) -> Int? {
+        guard let from, let to else { return nil }
+        let cal = Calendar.current
+        return cal.dateComponents([.day],
+                                  from: cal.startOfDay(for: from),
+                                  to: cal.startOfDay(for: to)).day
+    }
+
+    /// 一句人话："配种到生产 66 天（一般 63–65 天）"。
+    /// 偏出参考范围时**只加一句说明**，不改颜色、不报警 —— 见 gestationReference 那段注释。
+    static func gestationNote(matedDate: Date?, birthDate: Date?) -> String? {
+        guard let days = gestationDays(matedDate: matedDate, birthDate: birthDate) else { return nil }
+        if gestationReference.contains(days) { return "配种到生产 \(days) 天（一般 63–65 天）" }
+        return "配种到生产 \(days) 天 —— 偏出常见范围（\(gestationReference.lowerBound)–\(gestationReference.upperBound) 天），但个体差异是存在的"
+    }
+
+    static func nursingNote(birthDate: Date?, weanedDate: Date?) -> String? {
+        guard let days = nursingDays(birthDate: birthDate, weanedDate: weanedDate) else { return nil }
+        return "生产到出窝 \(days) 天"
+    }
+
     var title: String { "\(motherName) × \(fatherName)" }
 
     // 展示用的名字由 AppStore 在装配时注入，模型本身不持有引用，避免循环。
