@@ -387,6 +387,113 @@ struct Reminder: Identifiable, Codable, Hashable {
     var subtitle: String { "\(kind.label) · \(detail)" }
 }
 
+// MARK: - 疫苗 / 驱虫记录
+//
+// ⚠️ 它和「提醒」**不是一件事**，别合并：
+//   · 提醒是**将来**该做的事（可以有、可以改、做完了勾掉）
+//   · 记录是**已经发生**的事实（打完那天记一笔，之后一直是真的）
+// 而"下次什么时候做"应该是从记录**推**出来的，不是各存一份 ——
+// 存两份的话，改了记录却忘了改提醒，两者就开始互相骗人。
+// （同一条约定在繁育那边也用过：阶段由日期推导。）
+
+enum HealthKind: String, Codable, CaseIterable, Identifiable {
+    case vaccine
+    case dewormInternal
+    case dewormExternal
+
+    var id: String { rawValue }
+
+    var label: String {
+        switch self {
+        case .vaccine: return "疫苗"
+        case .dewormInternal: return "内驱"
+        case .dewormExternal: return "外驱"
+        }
+    }
+
+    var symbol: String {
+        switch self {
+        case .vaccine: return "syringe"
+        case .dewormInternal: return "pills"
+        case .dewormExternal: return "drop"
+        }
+    }
+
+    /// 参考间隔（天）。
+    ///
+    /// ⚠️ **这是常见做法，不是规则。** 具体要听兽医的、看药盒说明（不同产品差很多）。
+    /// 所以界面上只会说「参考下次」，**不说「该做了」** ——
+    /// 这个 App 没有资格替兽医下判断，说错了会让人真的耽误事。
+    var referenceIntervalDays: Int {
+        switch self {
+        case .vaccine: return 365          // 成年猫年免
+        case .dewormInternal: return 90    // 体内驱虫，常见 3 个月一次
+        case .dewormExternal: return 30    // 体外驱虫，常见 1 个月一次
+        }
+    }
+
+    /// 生成提醒时用哪一类（提醒那边只有"驱虫"一档，不细分内外）
+    var reminderKind: ReminderKind {
+        switch self {
+        case .vaccine: return .vaccine
+        case .dewormInternal, .dewormExternal: return .deworm
+        }
+    }
+}
+
+struct HealthRecord: Identifiable, Codable, Hashable {
+    var id: UUID = UUID()
+    var catID: UUID
+    var kind: HealthKind
+    var date: Date
+    var note: String = ""
+
+    /// 参考下一次的日期（由类型间隔推出来，不存）
+    var referenceNextDate: Date? {
+        Calendar.current.date(byAdding: .day, value: kind.referenceIntervalDays, to: date)
+    }
+
+    /// 「5月12日 · 猫三联第二针」
+    var title: String {
+        let day = Formatters.monthDay.string(from: date)
+        return note.isEmpty ? day : "\(day) · \(note)"
+    }
+
+    /// 距今天数（负数 = 还没到，用于"参考下次"）
+    static func days(from: Date, to: Date) -> Int {
+        let cal = Calendar.current
+        return cal.dateComponents([.day], from: cal.startOfDay(for: from), to: cal.startOfDay(for: to)).day ?? 0
+    }
+
+    /// 「3 个月前」这类人话。**"上次是什么时候做的"就是这个功能的全部意义**，
+    /// 所以这个换算必须一眼能懂，别让用户自己拿日期减。
+    ///
+    /// ⚠️ 分档的判据用**天**，不要用"算出来的月数"：
+    /// 早先写的是 `if months < 12 { … }`，于是 **364 天**（= 12.13 个月）
+    /// 会掉进年份分支，而 364/365 = 0 年、余下 12 个月 → 显示成
+    /// **「0 年 12 个月前」**。这个 bug 是被"把算法移植到 Python 跑边界"抓出来的
+    /// （纯文本换算，没有编译器也能验 —— 见技能里"纯算法可以脱离 Swift 验"）。
+    static func agoText(_ date: Date, now: Date = Date()) -> String {
+        let days = days(from: date, to: now)
+        if days < 0 { return "还没到" }
+        if days == 0 { return "今天" }
+        if days == 1 { return "昨天" }
+        if days < 30 { return "\(days) 天前" }
+        if days < 365 { return "\(days / 30) 个月前" }
+        let years = days / 365
+        let rest = (days % 365) / 30
+        return rest == 0 ? "\(years) 年前" : "\(years) 年 \(rest) 个月前"
+    }
+
+    /// 「还有 12 天」/「已过 5 天」
+    static func dueText(_ date: Date, now: Date = Date()) -> String {
+        let days = days(from: now, to: date)
+        if days == 0 { return "就是今天" }
+        if days > 0 { return "还有 \(days) 天" }
+        return "已过 \(-days) 天"
+    }
+}
+
 // MARK: 金额与日期格式化
 //
 // 金额一律走这里。展示口径必须唯一：

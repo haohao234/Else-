@@ -21,6 +21,7 @@ enum AppRoute: Hashable {
     case reminders
     case reminderNew(catID: UUID?)   // nil = 不预选猫（从提醒页加）
     case reminderEdit(UUID)
+    case healthEdit(catID: UUID, recordID: UUID?)   // recordID nil = 记一次新的
     case settings
 }
 
@@ -38,6 +39,7 @@ extension View {
             case .reminders: RemindersView()
             case .reminderNew(let catID): ReminderEditView(editingID: nil, presetCatID: catID)
             case .reminderEdit(let id): ReminderEditView(editingID: id, presetCatID: nil)
+            case .healthEdit(let catID, let recordID): HealthRecordEditView(catID: catID, editingID: recordID)
             case .settings: SettingsView()
             }
         }

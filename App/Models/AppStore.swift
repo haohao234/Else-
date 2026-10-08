@@ -13,6 +13,10 @@ struct AppData: Codable {
     var breedings: [BreedingRecord] = []
     var bills: [Bill] = []
     var reminders: [Reminder] = []
+    /// 疫苗 / 驱虫记录。**加在最后并且给了默认值** ——
+    /// 这样旧版本写出来的 store.json 仍然能解码（缺这个键就用空数组），
+    /// 用户不会因为我在中间加了个字段而突然"数据读不出来"。
+    var healthRecords: [HealthRecord] = []
 }
 
 // MARK: - 本地存储 + 派生数据
@@ -380,6 +384,33 @@ final class AppStore: ObservableObject {
         openReminders.filter { $0.catID == catID }
     }
 
+    // MARK: 疫苗 / 驱虫记录
+
+    func upsert(health: HealthRecord) {
+        if let idx = data.healthRecords.firstIndex(where: { $0.id == health.id }) {
+            data.healthRecords[idx] = health
+        } else {
+            data.healthRecords.append(health)
+        }
+        save()
+    }
+
+    func deleteHealth(id: UUID) {
+        data.healthRecords.removeAll { $0.id == id }
+        save()
+    }
+
+    /// 某只猫的记录，新的在前
+    func healthRecords(of catID: UUID) -> [HealthRecord] {
+        data.healthRecords.filter { $0.catID == catID }.sorted { $0.date > $1.date }
+    }
+
+    /// 某只猫某一类里**最近的一次** —— "上次内驱是什么时候"就是问这个。
+    /// 排序在 healthRecords 里已经做过，这里直接取第一个。
+    func latestHealth(of kind: HealthKind, for catID: UUID) -> HealthRecord? {
+        healthRecords(of: catID).first { $0.kind == kind }
+    }
+
     /// 未完成提醒，按截止日期升序（逾期的自然排在最前）
     var openReminders: [Reminder] {
         data.reminders.filter { !$0.isDone }.sorted { $0.dueDate < $1.dueDate }
@@ -477,9 +508,29 @@ extension AppData {
                      dueDate: at(4, hour: 9), catID: niangao.id),
         ]
 
+        // 疫苗 / 驱虫记录：给几只猫各留几条，让"上次是什么时候"这件事一进详情页就有内容 ——
+        // 空列表看不出这个功能在干什么。刻意让三类**各有远近**：
+        // 有的刚做过、有的快到点、有的已经过了，这样"参考下次"的三种状态都能被看到。
+        func daysAgo(_ offset: Int) -> Date { cal.date(byAdding: .day, value: -offset, to: today) ?? today }
+        let health: [HealthRecord] = [
+            HealthRecord(catID: mochi.id, kind: .vaccine, date: daysAgo(300), note: "猫三联 加强"),
+            HealthRecord(catID: mochi.id, kind: .dewormInternal, date: daysAgo(95), note: "海乐妙"),
+            HealthRecord(catID: mochi.id, kind: .dewormExternal, date: daysAgo(38), note: "大宠爱"),
+
+            HealthRecord(catID: leo.id, kind: .vaccine, date: daysAgo(120), note: "猫三联 + 狂犬"),
+            HealthRecord(catID: leo.id, kind: .dewormInternal, date: daysAgo(20), note: "海乐妙"),
+            HealthRecord(catID: leo.id, kind: .dewormExternal, date: daysAgo(12), note: "福来恩"),
+
+            HealthRecord(catID: xueqiu.id, kind: .dewormInternal, date: daysAgo(100), note: "拜宠清"),
+            HealthRecord(catID: xueqiu.id, kind: .dewormExternal, date: daysAgo(45), note: "福来恩"),
+
+            HealthRecord(catID: niangao.id, kind: .vaccine, date: daysAgo(240), note: "猫三联 加强"),
+        ]
+
         return AppData(cats: [mochi, leo, xueqiu, niangao, huihui],
                        breedings: [r1, r2, r3, r4, r5],
                        bills: bills,
-                       reminders: reminders)
+                       reminders: reminders,
+                       healthRecords: health)
     }
 }

@@ -35,6 +35,7 @@ struct CatDetailView: View {
                      trailing: AnyView(editLink(cat))) {
                 headerCard(cat)
                 factsCard(cat)
+                healthSection
                 remindersSection
                 breedingsSection
                 dangerZone(cat)
@@ -102,6 +103,103 @@ struct CatDetailView: View {
             DSKeyValueRow(key: "年龄", value: cat.ageLine)
             DSKeyValueRow(key: "体重", value: String(format: "%.1f kg", cat.weightKg), monospaced: true)
             DSKeyValueRow(key: "累计", value: "\(cat.litterCount) 胎", monospaced: true)
+        }
+    }
+
+    // MARK: 疫苗与驱虫（记录的是"已经发生过的事实"）
+
+    /// 这一段回答的是猫舍最常问的那句话：**"上次驱虫是什么时候？"**
+    /// 所以顶上先给三类各一行摘要（上次 + 距今多久 + 参考下次），下面才是流水。
+    private var healthSection: some View {
+        let records = store.healthRecords(of: catID)
+        return VStack(spacing: DS.Space.s) {
+            DSSectionHeader(title: "疫苗与驱虫")
+            DSActionRow(systemName: "syringe",
+                        title: "记一次疫苗 / 驱虫",
+                        subtitle: records.isEmpty ? "打完、驱完随手记一条" : "已记 \(records.count) 次",
+                        showsChevron: true,
+                        route: .healthEdit(catID: catID, recordID: nil))
+
+            if records.isEmpty {
+                DSCard {
+                    Text("还没有记录")
+                        .font(DS.Typo.rowTitle)
+                        .foregroundStyle(DS.ink)
+                    Text("记下每一次之后，就能一眼看到「上次内驱是什么时候」——\n而那正是决定下次什么时候做的依据。")
+                        .font(DS.Typo.caption)
+                        .foregroundStyle(DS.inkTertiary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            } else {
+                DSCard {
+                    ForEach(HealthKind.allCases) { kind in
+                        if let last = store.latestHealth(of: kind, for: catID) {
+                            healthSummaryRow(kind: kind, last: last)
+                        }
+                    }
+                    Text("「参考下次」是按常见间隔推算的（疫苗 12 个月 · 内驱 3 个月 · 外驱 1 个月），仅供参考 —— 具体请以兽医和药品说明为准。")
+                        .font(DS.Typo.caption)
+                        .foregroundStyle(DS.inkFaint)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+
+                DSCard {
+                    DSSectionHeader(title: "历史")
+                    ForEach(records.prefix(6)) { record in
+                        NavigationLink(value: AppRoute.healthEdit(catID: catID, recordID: record.id)) {
+                            DSListRow {
+                                DSIconTile(systemName: record.kind.symbol)
+                                VStack(alignment: .leading, spacing: DS.Space.xxs) {
+                                    Text(record.title)
+                                        .font(DS.Typo.rowTitle)
+                                        .foregroundStyle(DS.ink)
+                                        .lineLimit(1)
+                                    Text(record.kind.label)
+                                        .font(DS.Typo.caption)
+                                        .foregroundStyle(DS.inkTertiary)
+                                }
+                                Spacer(minLength: DS.Space.s)
+                                Text(HealthRecord.agoText(record.date))
+                                    .font(DS.Typo.caption)
+                                    .foregroundStyle(DS.inkFaint)
+                            }
+                        }
+                        .buttonStyle(.plain)
+                    }
+                    if records.count > 6 {
+                        Text("还有 \(records.count - 6) 次没列出来")
+                            .font(.system(size: 11))
+                            .foregroundStyle(DS.inkFaint)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .padding(.horizontal, DS.Space.xxs)
+                    }
+                }
+            }
+        }
+    }
+
+    private func healthSummaryRow(kind: HealthKind, last: HealthRecord) -> some View {
+        HStack(spacing: DS.Space.m) {
+            DSIconTile(systemName: kind.symbol)
+            VStack(alignment: .leading, spacing: DS.Space.xxs) {
+                Text("\(kind.label) · 上次 \(Formatters.monthDay.string(from: last.date))")
+                    .font(DS.Typo.rowTitle)
+                    .foregroundStyle(DS.ink)
+                Text(HealthRecord.agoText(last.date))
+                    .font(DS.Typo.caption)
+                    .foregroundStyle(DS.inkTertiary)
+            }
+            Spacer(minLength: DS.Space.s)
+            if let next = last.referenceNextDate {
+                VStack(alignment: .trailing, spacing: DS.Space.xxs) {
+                    Text("参考下次")
+                        .font(.system(size: 10))
+                        .foregroundStyle(DS.inkFaint)
+                    Text(HealthRecord.dueText(next))
+                        .font(.system(size: 12, weight: .semibold, design: .monospaced))
+                        .foregroundStyle(next < Date() ? DS.alert : DS.inkSecondary)
+                }
+            }
         }
     }
 
