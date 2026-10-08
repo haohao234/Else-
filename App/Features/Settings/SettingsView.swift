@@ -108,17 +108,19 @@ struct SettingsView: View {
     // MARK: 数据
 
     private var dataCard: some View {
+        VStack(spacing: DS.Space.xl) {
+            backupSection
+            exportSection
+        }
+    }
+
+    private var backupSection: some View {
         VStack(spacing: DS.Space.s) {
-            DSSectionHeader(title: "数据")
+            DSSectionHeader(title: "备份")
             DSActionRow(systemName: "externaldrive.badge.timemachine",
                         title: "创建本地备份",
                         subtitle: "完整快照（JSON），存到「文件」App 里能看到的目录") {
                 makeBackup()
-            }
-            DSActionRow(systemName: "tablecells",
-                        title: "导出账单 CSV",
-                        subtitle: "全是支出明细，可直接用 Excel / 数字表格打开") {
-                exportBillsCSV()
             }
             DSActionRow(systemName: "square.and.arrow.down",
                         title: "从文件导入备份",
@@ -132,6 +134,31 @@ struct SettingsView: View {
                         showsChevron: true) {
                 showRestoreList.toggle()
                 if showRestoreList { refresh() }
+            }
+        }
+    }
+
+    /// 备份与导出**分开成两组**，不是排版问题 —— 它们的目的完全不同：
+    /// 备份是"给将来的自己"（要能恢复，所以是完整 JSON），
+    /// 导出是"给现在的自己"（要能拿 Excel 算，所以是扁平 CSV）。
+    /// 混在一列里，用户永远分不清点下去会得到哪一个。
+    private var exportSection: some View {
+        VStack(spacing: DS.Space.s) {
+            DSSectionHeader(title: "导出")
+            DSActionRow(systemName: "tablecells",
+                        title: "账单明细 CSV",
+                        subtitle: "支出逐笔，可直接用 Excel 求和") {
+                exportBillsCSV()
+            }
+            DSActionRow(systemName: "cat",
+                        title: "种猫清单 CSV",
+                        subtitle: "只导事实（生日、体重、状态）；年龄这类让表格自己算") {
+                exportCatsCSV()
+            }
+            DSActionRow(systemName: "heart.text.square",
+                        title: "繁育记录 CSV",
+                        subtitle: "含孕期 / 哺乳天数；「阶段」那列标了「导出时」") {
+                exportBreedingsCSV()
             }
         }
     }
@@ -280,13 +307,37 @@ struct SettingsView: View {
     }
 
     private func exportBillsCSV() {
+        var names: [UUID: String] = [:]
+        for cat in store.data.cats { names[cat.id] = cat.name }
+        writeCSV(ExportService.billsCSV(store.data.bills, catNames: names),
+                 prefix: "育猫账单", count: store.data.bills.count, what: "笔账单")
+    }
+
+    private func exportCatsCSV() {
+        writeCSV(ExportService.catsCSV(store.data.cats),
+                 prefix: "种猫清单", count: store.data.cats.count, what: "只猫")
+    }
+
+    private func exportBreedingsCSV() {
+        // 用 breedingsWithNames：列表里母亲/父亲是名字，导出也必须是名字 ——
+        // 一份只有 UUID 的表格对用户毫无用处。
+        writeCSV(ExportService.breedingsCSV(store.breedingsWithNames),
+                 prefix: "繁育记录", count: store.data.breedings.count, what: "条繁育记录")
+    }
+
+    /// 三个导出共用的写法：**空数据不生成空文件**。
+    /// 导出一个只有表头的 csv，用户会以为导出坏了（其实只是没数据）——
+    /// 直接告诉他"还没有可以导出的东西"更省事。
+    private func writeCSV(_ text: String, prefix: String, count: Int, what: String) {
+        guard count > 0 else {
+            message = "还没有可以导出的\(prefix)。"
+            return
+        }
         do {
-            var names: [UUID: String] = [:]
-            for cat in store.data.cats { names[cat.id] = cat.name }
-            let csv = ExportService.billsCSV(store.data.bills, catNames: names)
-            let fileName = ExportService.stampedName(prefix: "育猫账单", ext: "csv")
-            let url = try ExportService.write(text: csv, fileName: fileName, in: store.documentsDirectory)
-            message = "已导出 \(store.data.bills.count) 笔账单：\(url.lastPathComponent)\n在「文件」App → 我的 iPhone → Elese的猫舍 里能看到。"
+            let url = try ExportService.writeCSV(text,
+                                                 fileName: ExportService.stampedName(prefix: prefix, ext: "csv"),
+                                                 in: store.documentsDirectory)
+            message = "已导出 \(count) \(what)：\(url.lastPathComponent)\n在「文件」App → 我的 iPhone → Elese的猫舍 里能看到。"
         } catch {
             message = "导出失败：\(error.localizedDescription)"
         }
