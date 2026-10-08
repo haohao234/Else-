@@ -105,22 +105,49 @@ struct ReminderEditView: View {
         }
     }
 
-    // MARK: ③ 哪天
+    // MARK: ③ 哪天几点
 
     private var whenCard: some View {
         DSCard {
-            DSSectionHeader(title: "哪天到期")
-            DSDateRow(label: "到期日", date: $draft.dueDate)
-            Text("到期当天上午 9:00 会提醒你一次（本地通知，不联网）。")
+            DSSectionHeader(title: "哪天几点")
+            DSDateRow(label: "到期", date: $draft.dueDate, showsTime: true)
+            timePresets
+            Text("会在 \(Formatters.monthDayTime.string(from: draft.dueDate)) 提醒你一次（本地通知，不联网）。")
                 .font(DS.Typo.caption)
                 .foregroundStyle(DS.inkFaint)
                 .fixedSize(horizontal: false, vertical: true)
-            if draft.dueDate < Calendar.current.startOfDay(for: Date()) {
-                Text("这个日期已经过去了 —— 它会直接出现在「已逾期」里，通知不会再响。")
+            if Reminder.isPast(dueDate: draft.dueDate) {
+                Text("这个时刻已经过去了 —— 它会直接出现在「已逾期」里，通知不会再响。")
                     .font(DS.Typo.caption)
                     .foregroundStyle(DS.alert)
                     .fixedSize(horizontal: false, vertical: true)
             }
+        }
+    }
+
+    /// 常用时刻快捷键。猫舍里就那么几个时间点（早上喂药、中午、晚上），
+    /// 让"几点"变成**一次点击**，而不是去滚轮里找 —— 手机上滚轮找分钟很烦。
+    private var timePresets: some View {
+        HStack(spacing: DS.Space.xs) {
+            Text("常用")
+                .font(DS.Typo.caption)
+                .foregroundStyle(DS.inkTertiary)
+            ForEach(Self.presetHours, id: \.self) { hour in
+                let active = isPresetHour(hour)
+                Button {
+                    setHour(hour)
+                } label: {
+                    Text(String(format: "%02d:00", hour))
+                        .font(.system(size: 12, weight: active ? .semibold : .regular))
+                        .foregroundStyle(active ? .white : DS.inkSecondary)
+                        .padding(.horizontal, DS.Space.m)
+                        .frame(height: 30)
+                        .background(active ? AnyShapeStyle(DS.primary) : AnyShapeStyle(DS.input),
+                                    in: Capsule())
+                }
+                .buttonStyle(.plain)
+            }
+            Spacer(minLength: 0)
         }
     }
 
@@ -161,6 +188,31 @@ struct ReminderEditView: View {
 
     // MARK: 读写
 
+    /// 常用时刻。加新的往这里加一行即可。
+    private static let presetHours = [9, 12, 20]
+
+    /// 新增时的默认到期时刻：**今天 9:00；若已过 9:00 就顺到明天 9:00**。
+    /// 为什么不直接给"此刻"：默认值要像一个"明天该做的事"，
+    /// 给"此刻"会立刻变成已逾期（用户一进来就看到红色的东西，是很糟的第一印象）。
+    private static var defaultDueDate: Date {
+        let cal = Calendar.current
+        let now = Date()
+        let todayNine = cal.date(bySettingHour: 9, minute: 0, second: 0, of: now) ?? now
+        if todayNine > now { return todayNine }
+        return cal.date(byAdding: .day, value: 1, to: todayNine) ?? todayNine
+    }
+
+    private func isPresetHour(_ hour: Int) -> Bool {
+        let cal = Calendar.current
+        return cal.component(.hour, from: draft.dueDate) == hour
+            && cal.component(.minute, from: draft.dueDate) == 0
+    }
+
+    private func setHour(_ hour: Int) {
+        let cal = Calendar.current
+        draft.dueDate = cal.date(bySettingHour: hour, minute: 0, second: 0, of: draft.dueDate) ?? draft.dueDate
+    }
+
     private func loadIfNeeded() {
         guard !didLoad else { return }
         didLoad = true
@@ -169,10 +221,11 @@ struct ReminderEditView: View {
             baseline = snapshot
             draft = snapshot
         } else {
-            // 新增：只把"从某只猫进来"的预选填上，其余留空让用户自己写 ——
+            // 新增：只把"从某只猫进来"的预选和一个体面的默认时刻填上，其余留空让用户自己写 ——
             // 预填太多会让人以为那是系统给定的值，反而不敢改。
             var fresh = ReminderDraft()
             fresh.catID = presetCatID
+            fresh.dueDate = Self.defaultDueDate
             baseline = fresh
             draft = fresh
         }

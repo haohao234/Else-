@@ -314,18 +314,30 @@ struct Reminder: Identifiable, Codable, Hashable {
 
     /// 截止文案。首页提醒行与 09 屏提醒列表**共用这一个纯函数**。
     /// 两处各写一份的话，"逾期 1 天"和"已逾期 1 天"这种差异迟早出现。
+    ///
+    /// ⚠️ **今天这一档要带上时刻**：提醒是可以设具体几点几分的（如"今天 20:00 喂药"），
+    /// 只写"今天到期"会让人以为"什么时候都行"，而通知其实只在那一个时刻响。
+    /// 隔了几天的那几档不带时刻 —— 那时候"还有 6 天"才是用户在意的信息。
     static func dueLabel(dueDate: Date, now: Date = Date()) -> (text: String, isOverdue: Bool) {
         let cal = Calendar.current
         let days = cal.dateComponents([.day],
                                       from: cal.startOfDay(for: now),
                                       to: cal.startOfDay(for: dueDate)).day ?? 0
         if days < 0 { return ("逾期 \(-days) 天", true) }
-        if days == 0 { return ("今天到期", false) }
-        if days == 1 { return ("明天到期", false) }
+        if days == 0 { return ("今天 \(timeLabel(dueDate))", false) }
+        if days == 1 { return ("明天 \(timeLabel(dueDate))", false) }
         return ("还有 \(days) 天", false)
     }
 
+    /// HH:mm。给"今天/明天"这种需要精确到时刻的场合用。
+    static func timeLabel(_ date: Date) -> String { Formatters.hourMinute.string(from: date) }
+
     var dueLabel: (text: String, isOverdue: Bool) { Reminder.dueLabel(dueDate: dueDate) }
+
+    /// 这条提醒"已经过去了"—— 判据是**完整时刻**而不是日期。
+    /// 本地通知只对未来的时刻有意义；今天 09:00 而现在已经 15:00，那个通知不会再响。
+    /// （列表里它仍然算"今天"，该做的事没做还是没做。）
+    static func isPast(dueDate: Date, now: Date = Date()) -> Bool { dueDate <= now }
 
     /// 提醒行副标题：类型 · 事项
     var subtitle: String { "\(kind.label) · \(detail)" }
@@ -373,6 +385,22 @@ enum Formatters {
         let f = DateFormatter()
         f.locale = Locale(identifier: "zh_CN")
         f.dateFormat = "yyyy 年 M 月"
+        return f
+    }()
+
+    /// HH:mm —— 提醒的时刻。用 en_US_POSIX 保证数字形态稳定（不受地区数字系统影响）。
+    static let hourMinute: DateFormatter = {
+        let f = DateFormatter()
+        f.locale = Locale(identifier: "en_US_POSIX")
+        f.dateFormat = "HH:mm"
+        return f
+    }()
+
+    /// M月d日 HH:mm —— 提醒表单里"会在什么时候提醒我"那句人话。
+    static let monthDayTime: DateFormatter = {
+        let f = DateFormatter()
+        f.locale = Locale(identifier: "zh_CN")
+        f.dateFormat = "M月d日 HH:mm"
         return f
     }()
 }

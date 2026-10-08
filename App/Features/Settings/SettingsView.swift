@@ -150,7 +150,7 @@ struct SettingsView: View {
             DSSectionHeader(title: "提醒")
             DSActionRow(systemName: "bell",
                         title: "本地通知",
-                        subtitle: "到期当天 9:00 提醒，不联网",
+                        subtitle: "到期时按你设的时间提醒，不联网",
                         detail: NotificationService.statusText(authStatus),
                         showsChevron: false) {
                 openNotifications()

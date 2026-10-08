@@ -341,12 +341,24 @@ extension AppData {
             Bill(title: "猫砂 + 猫爬架", category: .supplies, amount: 540, date: day(-20), note: "猫砂 20kg + 猫爬架"),
         ]
 
+        // 提醒是带**时刻**的，示例数据也要给出像样的时刻 ——
+        // 否则它们全等于"安装 App 的那一秒"，看起来像随机数（而这是用户第一眼看到的东西）。
+        func at(_ offset: Int, hour: Int) -> Date {
+            let d = day(offset)
+            return cal.date(bySettingHour: hour, minute: 0, second: 0, of: d) ?? d
+        }
+
         let reminders: [Reminder] = [
-            Reminder(kind: .deworm, title: "雪球 · 体内驱虫", detail: "海乐妙 · 每月一次", dueDate: day(-1), catID: xueqiu.id),
-            Reminder(kind: .weigh, title: "Leo · 体重记录", detail: "每周称重一次", dueDate: today, catID: leo.id),
-            Reminder(kind: .ultrasound, title: "Mochi · B 超复查", detail: "孕 5 周复查胎数", dueDate: day(6), catID: mochi.id),
-            Reminder(kind: .dueDate, title: "Mochi · 预产期临近", detail: "提前准备产房与保温箱", dueDate: day(15), catID: mochi.id),
-            Reminder(kind: .weanCheck, title: "年糕 · 幼猫出窝回访", detail: "确认 4 只幼猫健康状况", dueDate: day(4), catID: niangao.id),
+            Reminder(kind: .deworm, title: "雪球 · 体内驱虫", detail: "海乐妙 · 每月一次",
+                     dueDate: at(-1, hour: 9), catID: xueqiu.id),
+            Reminder(kind: .weigh, title: "Leo · 体重记录", detail: "每周称重一次",
+                     dueDate: at(0, hour: 20), catID: leo.id),
+            Reminder(kind: .ultrasound, title: "Mochi · B 超复查", detail: "孕 5 周复查胎数",
+                     dueDate: at(6, hour: 9), catID: mochi.id),
+            Reminder(kind: .dueDate, title: "Mochi · 预产期临近", detail: "提前准备产房与保温箱",
+                     dueDate: at(15, hour: 9), catID: mochi.id),
+            Reminder(kind: .weanCheck, title: "年糕 · 幼猫出窝回访", detail: "确认 4 只幼猫健康状况",
+                     dueDate: at(4, hour: 9), catID: niangao.id),
         ]
 
         return AppData(cats: [mochi, leo, xueqiu, niangao, huihui],

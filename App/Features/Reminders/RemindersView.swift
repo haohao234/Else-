@@ -63,7 +63,7 @@ struct RemindersView: View {
             HStack(spacing: DS.Space.m) {
                 DSIconTile(systemName: "bell.badge")
                 VStack(alignment: .leading, spacing: DS.Space.xxs) {
-                    Text("到期当天提醒你")
+                    Text("到期时提醒你")
                         .font(DS.Typo.rowTitle)
                         .foregroundStyle(DS.ink)
                     Text("本地通知 · 不需要联网 · 不上传任何数据")

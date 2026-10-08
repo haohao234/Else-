@@ -13,10 +13,6 @@ import UserNotifications
 
 enum NotificationService {
 
-    /// 到期日当天的提醒时刻。用 9 点而不是"截止时刻"：
-    /// 提醒的语义是"今天该做这件事"，而不是"到这一秒才告诉你"。
-    private static let hourOfDay = 9
-
     static func authorizationStatus(_ completion: @escaping (UNAuthorizationStatus) -> Void) {
         UNUserNotificationCenter.current().getNotificationSettings { settings in
             let status = settings.authorizationStatus
@@ -32,28 +28,33 @@ enum NotificationService {
     }
 
     /// 按当前未完成的提醒重排全部本地通知。返回实际排出去的条数。
+    ///
+    /// ⚠️ 提醒的时刻**由每条提醒自己决定**（用户在表单里能设到几点几分）。
+    /// 早先这里写死 9:00 —— 那是个"实现里的假设"，被当成产品决定用了很久；
+    /// 用户一问"具体多少点"就露馅了。**凡是时间/金额这类用户会在意的东西，
+    /// 别藏在代码里当常量。**
     @discardableResult
     static func reschedule(reminders: [Reminder], now: Date = Date()) -> Int {
         let center = UNUserNotificationCenter.current()
         center.removeAllPendingNotificationRequests()
 
         let cal = Calendar.current
-        let today = cal.startOfDay(for: now)
         var scheduled = 0
 
         for reminder in reminders where !reminder.isDone {
-            // 已经过期的排不了（系统会立刻投递或直接丢弃），跳过 —— 它们由 App 内的"已逾期"分组负责。
-            guard cal.startOfDay(for: reminder.dueDate) >= today else { continue }
+            // ⚠️ 判据是**完整时刻**，不是"日期是不是今天以后"：
+            // 今天 09:00 而现在已经 15:00 —— 那条通知不会再响了，排进去只会白排
+            // （系统的行为是立刻投递或直接丢弃，两种都不该发生）。
+            // 它仍然会出现在 App 内的「今天」分组里，因为该做的事没做还是没做。
+            guard reminder.dueDate > now else { continue }
 
             let content = UNMutableNotificationContent()
             content.title = reminder.title
             content.body = reminder.detail
             content.sound = .default
 
-            var comps = cal.dateComponents([.year, .month, .day], from: reminder.dueDate)
-            comps.hour = hourOfDay
-            comps.minute = 0
-
+            let comps = cal.dateComponents([.year, .month, .day, .hour, .minute],
+                                           from: reminder.dueDate)
             let trigger = UNCalendarNotificationTrigger(dateMatching: comps, repeats: false)
             let request = UNNotificationRequest(identifier: reminder.id.uuidString,
                                                 content: content,

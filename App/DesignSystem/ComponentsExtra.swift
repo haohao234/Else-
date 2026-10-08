@@ -97,18 +97,24 @@ struct DSDigitFieldRow: View {
 }
 
 /// 表单日期行。日期在右，点开是系统日历 —— 不自己写日历控件。
+/// `showsTime = true` 时连时刻一起选（提醒、将来的"喂药时间"这类需要精确到几点）。
 struct DSDateRow: View {
     let label: String
     @Binding var date: Date
+    var showsTime: Bool = false
+
+    private var components: DatePickerComponents {
+        showsTime ? [.date, .hourAndMinute] : .date
+    }
 
     var body: some View {
-        HStack(spacing: DS.Space.m) {
+        HStack(spacing: DS.Space.s) {
             Text(label)
                 .font(DS.Typo.body)
                 .foregroundStyle(DS.inkSecondary)
                 .frame(width: 64, alignment: .leading)
             Spacer(minLength: 0)
-            DatePicker("", selection: $date, displayedComponents: .date)
+            DatePicker("", selection: $date, displayedComponents: components)
                 .labelsHidden()
                 .environment(\.locale, Locale(identifier: "zh_CN"))
         }
