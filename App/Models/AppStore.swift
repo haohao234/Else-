@@ -13,10 +13,50 @@ struct AppData: Codable {
     var breedings: [BreedingRecord] = []
     var bills: [Bill] = []
     var reminders: [Reminder] = []
-    /// 疫苗 / 驱虫记录。**加在最后并且给了默认值** ——
-    /// 这样旧版本写出来的 store.json 仍然能解码（缺这个键就用空数组），
-    /// 用户不会因为我在中间加了个字段而突然"数据读不出来"。
     var healthRecords: [HealthRecord] = []
+
+    enum CodingKeys: String, CodingKey {
+        case schemaVersion, cats, breedings, bills, reminders, healthRecords
+    }
+
+    /// ⚠️⚠️ **这个 init 一个字都不能省** —— 它是"加新字段不会毁掉旧数据"的唯一保证。
+    ///
+    /// Swift **合成的** Decodable 实现**不会**使用属性的默认值：
+    /// 旧文件里少一个键，`decode(_:forKey:)` 直接抛 `keyNotFound`，
+    /// 于是整份 store.json 读不出来 —— 用户会看到"数据文件读不出来"的红色警示 +
+    /// 空数据（原文件被留档，没丢，但那一瞬间足够吓人）。
+    ///
+    /// 这条我一开始判断错了：我在 `healthRecords` 上写了 `= []`，就以为旧文件照样能读。
+    /// 查证的原文（Swift 论坛，Apple 工程师 Itai Ferber）：
+    ///     "default values for variables are actually never taken into account
+    ///      when synthesizing init(from:)"
+    /// ⇒ **给属性默认值 ≠ 解码时容忍缺键。**
+    ///
+    /// 所以每个字段都走 `decodeIfPresent ?? 默认值`：
+    /// 以后**再加任何顶层字段，旧文件都能照常读**。
+    /// （嵌套模型内部加字段仍有同样的坑，加之前先给那个类型也补一个这样的 init。）
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        schemaVersion = try c.decodeIfPresent(Int.self, forKey: .schemaVersion) ?? 1
+        cats = try c.decodeIfPresent([Cat].self, forKey: .cats) ?? []
+        breedings = try c.decodeIfPresent([BreedingRecord].self, forKey: .breedings) ?? []
+        bills = try c.decodeIfPresent([Bill].self, forKey: .bills) ?? []
+        reminders = try c.decodeIfPresent([Reminder].self, forKey: .reminders) ?? []
+        healthRecords = try c.decodeIfPresent([HealthRecord].self, forKey: .healthRecords) ?? []
+    }
+
+    /// 手写这个是因为上面那个 init 会把**逐成员初始化器**顶掉（`AppData()` 与示例数据都要用它）。
+    init(cats: [Cat] = [],
+         breedings: [BreedingRecord] = [],
+         bills: [Bill] = [],
+         reminders: [Reminder] = [],
+         healthRecords: [HealthRecord] = []) {
+        self.cats = cats
+        self.breedings = breedings
+        self.bills = bills
+        self.reminders = reminders
+        self.healthRecords = healthRecords
+    }
 }
 
 // MARK: - 本地存储 + 派生数据
