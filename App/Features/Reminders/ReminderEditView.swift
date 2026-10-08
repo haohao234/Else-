@@ -110,11 +110,18 @@ struct ReminderEditView: View {
     private var whenCard: some View {
         DSCard {
             DSSectionHeader(title: "哪天几点")
-            DSDateRow(label: "到期", date: $draft.dueDate, showsTime: true)
+            // 日期与时刻**各占一行**：把时刻藏在日期控件的第二层里，
+            // 用户会直接问"怎么只有日期"（真实反馈）。要什么就给什么一行。
+            DSDateRow(label: "日期", date: $draft.dueDate)
+            DSTimeRow(label: "时刻", date: $draft.dueDate)
             timePresets
-            Text("会在 \(Formatters.monthDayTime.string(from: draft.dueDate)) 提醒你一次（本地通知，不联网）。")
+            Text("「时刻」可以调到任意小时任意分钟（00:00–23:59）；\n下面三个只是常用时间的快捷方式。")
                 .font(DS.Typo.caption)
                 .foregroundStyle(DS.inkFaint)
+                .fixedSize(horizontal: false, vertical: true)
+            Text("会在 \(Formatters.monthDayTime.string(from: draft.dueDate)) 提醒你一次（本地通知，不联网）。")
+                .font(DS.Typo.caption)
+                .foregroundStyle(DS.primary)
                 .fixedSize(horizontal: false, vertical: true)
             if Reminder.isPast(dueDate: draft.dueDate) {
                 Text("这个时刻已经过去了 —— 它会直接出现在「已逾期」里，通知不会再响。")
@@ -127,9 +134,10 @@ struct ReminderEditView: View {
 
     /// 常用时刻快捷键。猫舍里就那么几个时间点（早上喂药、中午、晚上），
     /// 让"几点"变成**一次点击**，而不是去滚轮里找 —— 手机上滚轮找分钟很烦。
+    /// ⚠️ 它只是**快捷方式**，不是可选范围：任意分钟由上面那行「时刻」负责。
     private var timePresets: some View {
         HStack(spacing: DS.Space.xs) {
-            Text("常用")
+            Text("快捷")
                 .font(DS.Typo.caption)
                 .foregroundStyle(DS.inkTertiary)
             ForEach(Self.presetHours, id: \.self) { hour in

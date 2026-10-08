@@ -97,15 +97,9 @@ struct DSDigitFieldRow: View {
 }
 
 /// 表单日期行。日期在右，点开是系统日历 —— 不自己写日历控件。
-/// `showsTime = true` 时连时刻一起选（提醒、将来的"喂药时间"这类需要精确到几点）。
 struct DSDateRow: View {
     let label: String
     @Binding var date: Date
-    var showsTime: Bool = false
-
-    private var components: DatePickerComponents {
-        showsTime ? [.date, .hourAndMinute] : .date
-    }
 
     var body: some View {
         HStack(spacing: DS.Space.s) {
@@ -114,7 +108,34 @@ struct DSDateRow: View {
                 .foregroundStyle(DS.inkSecondary)
                 .frame(width: 64, alignment: .leading)
             Spacer(minLength: 0)
-            DatePicker("", selection: $date, displayedComponents: components)
+            DatePicker("", selection: $date, displayedComponents: .date)
+                .labelsHidden()
+                .environment(\.locale, Locale(identifier: "zh_CN"))
+        }
+        .padding(.horizontal, DS.Space.l)
+        .frame(height: DS.Metrics.inputHeight)
+        .background(DS.input, in: RoundedRectangle(cornerRadius: DS.Radius.input, style: .continuous))
+    }
+}
+
+/// 表单**时刻**行（只有时间，任意小时任意分钟）。
+///
+/// ⚠️ 为什么单独做一行，而不是把 `.date + .hourAndMinute` 合成一个控件：
+/// 合成之后，日期与时刻会被塞进同一个弹层里，**用户直接反馈"没有看到时刻选项"** ——
+/// 他要找的是"几点"，而界面上只有"某月某日"。
+/// 教训：**用户要在意的东西，必须有它自己的一行。**藏着就是没有。
+struct DSTimeRow: View {
+    let label: String
+    @Binding var date: Date
+
+    var body: some View {
+        HStack(spacing: DS.Space.s) {
+            Text(label)
+                .font(DS.Typo.body)
+                .foregroundStyle(DS.inkSecondary)
+                .frame(width: 64, alignment: .leading)
+            Spacer(minLength: 0)
+            DatePicker("", selection: $date, displayedComponents: .hourAndMinute)
                 .labelsHidden()
                 .environment(\.locale, Locale(identifier: "zh_CN"))
         }

@@ -44,6 +44,8 @@ jobs:
             -configuration Debug \
             -destination 'generic/platform=iOS' \
             -derivedDataPath build \
+            CURRENT_PROJECT_VERSION="${{ github.run_number }}" \
+            ELESE_BUILD_SHA="${GITHUB_SHA::7}" \
             CODE_SIGNING_ALLOWED=NO \
             CODE_SIGNING_REQUIRED=NO \
             CODE_SIGN_IDENTITY="" \
@@ -54,6 +56,11 @@ jobs:
         # -derivedDataPath build 是为了让产物落在**可预测的位置**（./build/Build/Products/…）：
         # 默认的 DerivedData 路径带哈希，从外部没法稳定拿到 .app —— 而没有 .app 就验不了
         # "图标到底进没进包"（那正是后面 artifact 要上传的东西）。
+        #
+        # CURRENT_PROJECT_VERSION / ELESE_BUILD_SHA 是**交付标识**：注入到 Info.plist，
+        # 再由设置页显示出来。侧载场景下用户手上会同时有好几个包，而它们原本全写着 1.0 (1) ——
+        # 于是"你装的是新版还是旧版"只能靠猜（实测吃过一次：用户说"没看到某功能"，
+        # 而那个功能只在新包里）。现在一句"设置页最下面那行写着什么"就能定位。
 
       # ── 真机验收通道：Release 构建 + 未签名 IPA ────────────────────────────
       #
@@ -78,6 +85,8 @@ jobs:
             -configuration Release \
             -destination 'generic/platform=iOS' \
             -derivedDataPath build \
+            CURRENT_PROJECT_VERSION="${{ github.run_number }}" \
+            ELESE_BUILD_SHA="${GITHUB_SHA::7}" \
             CODE_SIGNING_ALLOWED=NO \
             CODE_SIGNING_REQUIRED=NO \
             CODE_SIGN_IDENTITY="" \
@@ -87,6 +96,9 @@ jobs:
           cp -R "build/Build/Products/Release-iphoneos/EleseCattery.app" Payload/
           zip -qry "EleseCattery-unsigned.ipa" Payload
           ls -la "EleseCattery-unsigned.ipa"
+          echo "=== 注入的交付标识（应与本次提交一致）==="
+          plutil -extract CFBundleVersion raw -o - "Payload/EleseCattery.app/Info.plist"
+          plutil -extract EleseBuildSHA raw -o - "Payload/EleseCattery.app/Info.plist"
 
       # 拆包自检放在**上传之前**：坏包不该变成用户能下载的 artifact ——
       # 用户是照指引点 Artifacts 的人，他不会拆开看版本键。
@@ -129,6 +141,15 @@ jobs:
             echo "  ✓ 结构正确"
           else
             echo "::error::IPA 结构不对 —— Sideloadly 会报 Invalid file"
+            FAIL=1
+          fi
+
+          echo "=== 5) 交付标识必须真的注进去了（设置页靠它回答"我装的是哪一版"）==="
+          SHA=$(plutil -extract EleseBuildSHA raw -o - "$APP/Info.plist" 2>/dev/null || echo "")
+          CVER=$(plutil -extract CFBundleVersion raw -o - "$APP/Info.plist" 2>/dev/null || echo "")
+          echo "  EleseBuildSHA = '$SHA'   CFBundleVersion = '$CVER'"
+          if [ "$SHA" = "local" ] || [ -z "$SHA" ]; then
+            echo "::error::交付标识还是 local —— 用户没法判断自己装的是哪一版"
             FAIL=1
           fi
 

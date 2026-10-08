@@ -115,10 +115,18 @@ enum BackupService {
         return "\(appData.cats.count) 只猫 · \(appData.breedings.count) 条繁育 · \(appData.bills.count) 笔账"
     }
 
-    /// 通用文件大小文案
+    /// 通用文件大小文案（两个入口共用同一套换算 —— 分两份写必然会出现两套阈值）
     static func sizeText(of url: URL) -> String {
         let attrs = try? FileManager.default.attributesOfItem(atPath: url.path)
-        let bytes = (attrs?[.size] as? Int) ?? 0
+        return byteText((attrs?[.size] as? Int) ?? 0)
+    }
+
+    /// 同上，但对象是**内存里的数据**（待恢复的备份只有 Data，没有文件）。
+    static func sizeText(of data: Data) -> String {
+        byteText(data.count)
+    }
+
+    private static func byteText(_ bytes: Int) -> String {
         let kb = Double(bytes) / 1024
         if kb < 1 { return "\(bytes) B" }
         if kb < 1024 { return String(format: "%.1f KB", kb) }

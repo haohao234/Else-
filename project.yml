@@ -14,6 +14,11 @@ settings:
     CURRENT_PROJECT_VERSION: "1"         # 缺了 CFBundleVersion 会不存在 → 装不上，且不报错
     ENABLE_DEBUG_DYLIB: "NO"             # Xcode 16 的 Debug 默认开，会让主二进制变成壳
     TARGETED_DEVICE_FAMILY: "1"          # 仅 iPhone
+    # 交付标识：设置页会把它显示出来。
+    # 为什么必须有：装到手机上之后，**用户没法判断自己装的是哪一版** ——
+    # 所有包都写着 1.0 (1)，于是"我装了新的吗""你看到的是旧版还是新版"全靠猜。
+    # CI 会覆盖成提交哈希前 7 位（见 .github/workflows/ios-build.yml），本地构建是 local。
+    ELESE_BUILD_SHA: "local"
     GENERATE_INFOPLIST_FILE: "NO"        # 用手写 plist，保住里面的注释
     CODE_SIGN_STYLE: Automatic
     DEVELOPMENT_TEAM: ""
