@@ -17,6 +17,17 @@ struct AppData: Codable {
 
 // MARK: - 本地存储 + 派生数据
 
+/// 读数据文件失败的原因。
+///
+/// ⚠️ 用一个小 struct，而不是直接 `Result<AppData, String>` ——
+/// `Result` 的 Failure 必须 conform to `Error`，而 **`String` 并不 conform**。
+/// 我一开始想当然地写了 String，被 CI 的 commit 评论当场抓住：
+///     `AppStore.swift:80:48: error: type 'String' does not conform to protocol 'Error'`
+/// （这条记在这里，是因为它属于"看起来一定会编译过"的那类错。）
+private struct StoreReadError: Error {
+    let message: String
+}
+
 @MainActor
 final class AppStore: ObservableObject {
 
@@ -61,7 +72,7 @@ final class AppStore: ObservableObject {
                 data = loaded
             case .failure(let reason):
                 data = AppData()
-                loadProblem = reason
+                loadProblem = reason.message
                 quarantinedFileName = AppStore.quarantine(storeFileURL)
             }
         } else {
@@ -77,22 +88,22 @@ final class AppStore: ObservableObject {
     // MARK: 磁盘读写
 
     /// 读 + 解析，失败时给出**人话原因** —— 直接把 DecodingError 抛给用户看没有意义。
-    private static func read(from url: URL) -> Result<AppData, String> {
+    private static func read(from url: URL) -> Result<AppData, StoreReadError> {
         let raw: Data
         do {
             raw = try Data(contentsOf: url)
         } catch {
-            return .failure("数据文件读不出来（\(error.localizedDescription)）")
+            return .failure(StoreReadError(message: "数据文件读不出来（\(error.localizedDescription)）"))
         }
         guard !raw.isEmpty else {
-            return .failure("数据文件是空的（0 字节）")
+            return .failure(StoreReadError(message: "数据文件是空的（0 字节）"))
         }
         let decoder = JSONDecoder()
         decoder.dateDecodingStrategy = .iso8601
         do {
             return .success(try decoder.decode(AppData.self, from: raw))
         } catch {
-            return .failure("数据文件的内容不是本 App 认识的格式")
+            return .failure(StoreReadError(message: "数据文件的内容不是本 App 认识的格式"))
         }
     }
 
