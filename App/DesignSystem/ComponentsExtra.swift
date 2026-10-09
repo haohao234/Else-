@@ -542,20 +542,19 @@ struct DSAlertCard: View {
 }
 
 // MARK: 键盘
-
-/// 收起键盘。
-///
-/// 为什么走 UIKit 这条路：SwiftUI 没有"全局收起键盘"的 API。
-/// 而**数字键盘（decimalPad）连回车键都没有** —— 打完金额、体重，
-/// 除了去点保存就没有别的办法把它收起来了（保存条会随键盘上浮，所以不算卡死，
-/// 但"想把键盘收起来看一眼表单"这件事做不到）。
-/// 所以只能自己 resign first responder。这是刻意的例外，不是随手混写 UIKit。
-enum DSKeyboard {
-    static func dismiss() {
-        UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder),
-                                        to: nil, from: nil, for: nil)
-    }
-}
+//
+// 这里曾经有一个 `DSKeyboard.dismiss()`（走 UIKit 的 resignFirstResponder），
+// 用来支持"点空白处收起键盘"。**连同那条手势一起撤掉了** ——
+// 因为它改的是整棵子树的命中判定，把二级页所有按钮的点按都吃掉了
+// （用户实测：「所有功能都用不了，除了滑动动画」）。
+//
+// 现在收起数字键盘只有一条路：**拖动表单**（`DSScreen` 里的 `.scrollDismissesKeyboard`）。
+// 那条是 ScrollView 自身的行为，不参与命中判定，是安全的。
+//
+// 以后若要加回"点空白处"：**只把它加在自己那一层的背景上**
+// （例如内容 VStack 的 `.background(Color.clear.onTapGesture { … })`），
+// 卡片在前、背景在后，点卡片仍然先命中卡片。
+// **绝不要加在 ScrollView 这种包着全部内容的容器上。**
 
 // MARK: 按压反馈
 
