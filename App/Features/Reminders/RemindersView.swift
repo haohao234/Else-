@@ -53,7 +53,7 @@ struct RemindersView: View {
                 .frame(width: 36, height: 36)
                 .background(DS.primary, in: RoundedRectangle(cornerRadius: DS.Radius.iconButton, style: .continuous))
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.dsPressable)
     }
 
     // MARK: 通知状态
@@ -138,7 +138,7 @@ struct RemindersView: View {
                 }
             }
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.dsPressable)
         // 长按菜单用来"改 / 删"：把这两个动作放在菜单里，而不是往行上再加两个按钮 ——
         // 一行的主动作只能有一个（这里是"完成"），其余的藏进长按是 iOS 的常规语言。
         .contextMenu {
@@ -191,7 +191,7 @@ struct RemindersView: View {
                                     .foregroundStyle(DS.inkFaint)
                             }
                         }
-                        .buttonStyle(.plain)
+                        .buttonStyle(.dsPressable)
                     }
                     Text("点一下可以撤回「已完成」")
                         .font(.system(size: 11))

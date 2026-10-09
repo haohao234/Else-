@@ -51,7 +51,7 @@ struct CatsListView: View {
                 .frame(width: 36, height: 36)
                 .background(DS.primary, in: RoundedRectangle(cornerRadius: DS.Radius.iconButton, style: .continuous))
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.dsPressable)
     }
 
     // MARK: 搜索 + 筛选
@@ -88,7 +88,7 @@ struct CatsListView: View {
                     in: Capsule()
                 )
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.dsPressable)
     }
 
     // MARK: 内容
@@ -131,7 +131,7 @@ struct CatsListView: View {
                             }
                         }
                     }
-                    .buttonStyle(.plain)
+                    .buttonStyle(.dsPressable)
                 }
             }
             .padding(.horizontal, DS.Space.screenH)

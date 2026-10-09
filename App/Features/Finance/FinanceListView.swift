@@ -56,7 +56,7 @@ struct FinanceListView: View {
                 .frame(width: 36, height: 36)
                 .background(DS.primary, in: RoundedRectangle(cornerRadius: DS.Radius.iconButton, style: .continuous))
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.dsPressable)
     }
 
     private var monthBar: some View {
@@ -217,7 +217,7 @@ struct FinanceListView: View {
                             .foregroundStyle(DS.ink)
                     }
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(.dsPressable)
             }
         }
     }

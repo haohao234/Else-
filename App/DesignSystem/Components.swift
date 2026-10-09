@@ -53,7 +53,7 @@ struct DSPrimaryButton: View {
                 .frame(height: height)
                 .background(DS.primaryGradient, in: RoundedRectangle(cornerRadius: DS.Radius.button, style: .continuous))
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.dsPressable)
         .dsButtonShadow()
     }
 }
@@ -73,7 +73,7 @@ struct DSGhostButton: View {
                 .frame(height: height)
                 .background(DS.surface, in: RoundedRectangle(cornerRadius: DS.Radius.button, style: .continuous))
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.dsPressable)
     }
 }
 
@@ -95,7 +95,7 @@ struct DSIconButton: View {
                     in: RoundedRectangle(cornerRadius: DS.Radius.iconButton, style: .continuous)
                 )
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.dsPressable)
     }
 }
 
@@ -245,7 +245,7 @@ struct DSSectionHeader: View {
                 Button(actionTitle, action: onAction)
                     .font(DS.Typo.caption)
                     .foregroundStyle(DS.primary)
-                    .buttonStyle(.plain)
+                    .buttonStyle(.dsPressable)
             }
         }
     }
@@ -380,7 +380,7 @@ struct DSSegmented<T: Hashable>: View {
                             in: RoundedRectangle(cornerRadius: DS.Radius.iconButton, style: .continuous)
                         )
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(.dsPressable)
             }
         }
         .padding(DS.Space.xxs)
@@ -504,7 +504,7 @@ struct DSTabBar: View {
                         in: RoundedRectangle(cornerRadius: 15, style: .continuous)
                     )
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(.dsPressable)
             }
         }
         .padding(DS.Space.xxs)

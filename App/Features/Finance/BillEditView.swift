@@ -116,7 +116,7 @@ struct BillEditView: View {
                                     in: Capsule()
                                 )
                         }
-                        .buttonStyle(.plain)
+                        .buttonStyle(.dsPressable)
                     }
                 }
             }

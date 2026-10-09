@@ -98,7 +98,7 @@ struct SettingsView: View {
                     .font(.system(size: 11, weight: .semibold))
                     .foregroundStyle(DS.inkTertiary)
             }
-            .buttonStyle(.plain)
+            .buttonStyle(.dsPressable)
         }
         .padding(DS.Space.m)
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -197,7 +197,7 @@ struct SettingsView: View {
                                 .foregroundStyle(DS.inkFaint)
                         }
                     }
-                    .buttonStyle(.plain)
+                    .buttonStyle(.dsPressable)
                 }
             }
         }

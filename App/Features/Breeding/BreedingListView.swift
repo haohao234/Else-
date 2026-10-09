@@ -52,7 +52,7 @@ struct BreedingListView: View {
                 .frame(width: 36, height: 36)
                 .background(DS.primary, in: RoundedRectangle(cornerRadius: DS.Radius.iconButton, style: .continuous))
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.dsPressable)
     }
 
     private var controls: some View {
@@ -79,7 +79,7 @@ struct BreedingListView: View {
                 .frame(height: 32)
                 .background(active ? AnyShapeStyle(DS.primary) : AnyShapeStyle(DS.surface), in: Capsule())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.dsPressable)
     }
 
     @ViewBuilder
@@ -100,7 +100,7 @@ struct BreedingListView: View {
                     NavigationLink(value: AppRoute.breedingDetail(record.id)) {
                         BreedingRowCard(record: record)
                     }
-                    .buttonStyle(.plain)
+                    .buttonStyle(.dsPressable)
                 }
             }
             .padding(.horizontal, DS.Space.screenH)

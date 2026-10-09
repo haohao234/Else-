@@ -98,7 +98,7 @@ struct BreedingDetailView: View {
                 }
                 .foregroundStyle(DS.primary)
             }
-            .buttonStyle(.plain)
+            .buttonStyle(.dsPressable)
         }
     }
 

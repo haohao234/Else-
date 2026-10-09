@@ -73,6 +73,14 @@ struct DSScreen<Content: View>: View {
                     .padding(.horizontal, DS.Space.screenH)
                     .padding(.bottom, DS.Space.xxl * 2)
             }
+            // 数字键盘（金额、体重）**没有回车键**，所以必须给它一条退路：
+            //   · 拖动表单 → 键盘跟着手势收起来
+            //   · 点空白处 → 收起键盘
+            // 为什么用 simultaneousGesture 而不是 onTapGesture：后者会把点按"吃掉"，
+            // 卡片里的按钮就点不动了；simultaneous 不抢事件 ——
+            // 点按钮时按钮照常响应，同时键盘也收起来（这正是想要的效果）。
+            .scrollDismissesKeyboard(.interactively)
+            .simultaneousGesture(TapGesture().onEnded { DSKeyboard.dismiss() })
         }
         // 用自绘导航栏取代系统导航栏：设计稿的标题是**居中**的，
         // 而系统导航栏的标题会跟着大标题模式变成左对齐。

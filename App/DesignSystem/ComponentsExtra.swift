@@ -226,10 +226,10 @@ struct DSActionRow: View {
     var body: some View {
         if let route {
             NavigationLink(value: route) { content }
-                .buttonStyle(.plain)
+                .buttonStyle(.dsPressable)
         } else {
             Button(action: action) { content }
-                .buttonStyle(.plain)
+                .buttonStyle(.dsPressable)
         }
     }
 
@@ -280,7 +280,7 @@ struct DSPrimaryLink: View {
                 .frame(height: height)
                 .background(DS.primaryGradient, in: RoundedRectangle(cornerRadius: DS.Radius.button, style: .continuous))
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.dsPressable)
         .dsButtonShadow()
     }
 }
@@ -474,7 +474,7 @@ struct DSMonthCalendar: View {
                     }
                 }
             }
-            .buttonStyle(.plain)
+            .buttonStyle(.dsPressable)
         } else {
             Color.clear.frame(height: 40)
         }
@@ -541,6 +541,46 @@ struct DSAlertCard: View {
     }
 }
 
+// MARK: 键盘
+
+/// 收起键盘。
+///
+/// 为什么走 UIKit 这条路：SwiftUI 没有"全局收起键盘"的 API。
+/// 而**数字键盘（decimalPad）连回车键都没有** —— 打完金额、体重，
+/// 除了去点保存就没有别的办法把它收起来了（保存条会随键盘上浮，所以不算卡死，
+/// 但"想把键盘收起来看一眼表单"这件事做不到）。
+/// 所以只能自己 resign first responder。这是刻意的例外，不是随手混写 UIKit。
+enum DSKeyboard {
+    static func dismiss() {
+        UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder),
+                                        to: nil, from: nil, for: nil)
+    }
+}
+
+// MARK: 按压反馈
+
+/// 可点区域的按压反馈：**轻微缩小 + 轻微变暗**，瞬时完成。
+///
+/// 为什么值得专门做一个：整个工程原本一律 `.buttonStyle(.dsPressable)` ——
+/// 按下去**毫无反馈**，点起来像在点一张图片。
+/// "跟手不跟手"这件事，很多时候就差这几十毫秒。
+///
+/// 三条克制：缩放只到 0.97、变暗只到 0.78、时长 0.12 秒。
+/// **不做弹跳、不做位移** —— 列表里滚动时那种动画会很吵。
+struct DSPressableButtonStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .scaleEffect(configuration.isPressed ? 0.97 : 1)
+            .opacity(configuration.isPressed ? 0.78 : 1)
+            .animation(.easeOut(duration: 0.12), value: configuration.isPressed)
+    }
+}
+
+extension ButtonStyle where Self == DSPressableButtonStyle {
+    /// 用法：`.buttonStyle(.dsPressable)`
+    static var dsPressable: DSPressableButtonStyle { DSPressableButtonStyle() }
+}
+
 // MARK: 记账
 
 /// 金额输入：¥ 符号固定在前，数字大号等宽。
@@ -602,7 +642,7 @@ struct DSCategoryGrid: View {
                         in: RoundedRectangle(cornerRadius: DS.Radius.iconButton, style: .continuous)
                     )
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(.dsPressable)
             }
         }
     }
