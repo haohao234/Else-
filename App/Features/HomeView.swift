@@ -107,7 +107,7 @@ struct HomeView: View {
                                          tone: reminder.dueLabel.isOverdue ? .alert : .archived)
                         }
                     }
-                    .buttonStyle(.dsPressable)
+                    .buttonStyle(.plain)
                 }
             }
         }
@@ -161,7 +161,7 @@ struct HomeView: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .dsCardSurface(radius: DS.Radius.cardLarge)
                 }
-                .buttonStyle(.dsPressable)
+                .buttonStyle(.plain)
             } else {
                 DSCard {
                     Text("还没有繁育记录")
@@ -240,7 +240,7 @@ struct HomeView: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .dsCardSurface(radius: DS.Radius.cardLarge)
             }
-            .buttonStyle(.dsPressable)
+            .buttonStyle(.plain)
         }
     }
 

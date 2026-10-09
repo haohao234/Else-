@@ -153,7 +153,7 @@ struct ReminderEditView: View {
                         .background(active ? AnyShapeStyle(DS.primary) : AnyShapeStyle(DS.input),
                                     in: Capsule())
                 }
-                .buttonStyle(.dsPressable)
+                .buttonStyle(.plain)
             }
             Spacer(minLength: 0)
         }

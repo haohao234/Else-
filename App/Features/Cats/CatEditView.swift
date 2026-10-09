@@ -103,7 +103,7 @@ struct CatEditView: View {
                         .font(DS.Typo.rowTitle)
                         .foregroundStyle(DS.primary)
                 }
-                .buttonStyle(.dsPressable)
+                .buttonStyle(.plain)
                 if previewAvatar != nil {
                     Button {
                         pickedData = nil
@@ -114,7 +114,7 @@ struct CatEditView: View {
                             .font(DS.Typo.caption)
                             .foregroundStyle(DS.inkTertiary)
                     }
-                    .buttonStyle(.dsPressable)
+                    .buttonStyle(.plain)
                 }
                 Text("照片只存本机，不会上传。")
                     .font(DS.Typo.caption)

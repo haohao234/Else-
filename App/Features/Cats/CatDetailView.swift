@@ -62,7 +62,7 @@ struct CatDetailView: View {
                 .frame(width: 36, height: 36)
                 .background(DS.surface, in: RoundedRectangle(cornerRadius: DS.Radius.iconButton, style: .continuous))
         }
-        .buttonStyle(.dsPressable)
+        .buttonStyle(.plain)
     }
 
     // MARK: ① 它是谁
@@ -164,7 +164,7 @@ struct CatDetailView: View {
                                     .foregroundStyle(DS.inkFaint)
                             }
                         }
-                        .buttonStyle(.dsPressable)
+                        .buttonStyle(.plain)
                     }
                     if records.count > 6 {
                         Text("还有 \(records.count - 6) 次没列出来")
@@ -280,7 +280,7 @@ struct CatDetailView: View {
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .dsRowSurface()
                     }
-                    .buttonStyle(.dsPressable)
+                    .buttonStyle(.plain)
                 }
             }
         }

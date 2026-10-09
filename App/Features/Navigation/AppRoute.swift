@@ -73,18 +73,6 @@ struct DSScreen<Content: View>: View {
                     .padding(.horizontal, DS.Space.screenH)
                     .padding(.bottom, DS.Space.xxl * 2)
             }
-            // 数字键盘（金额、体重）**没有回车键**，所以给它一条退路：
-            // 拖动表单 → 键盘跟着手势收起来。
-            //
-            // ⚠️⚠️ **不要再往这里加任何 TapGesture**（包括 simultaneousGesture）。
-            // 曾经加过一条"点空白处收起键盘"，结果**把整屏的按钮点按全部吃掉了** ——
-            // 二级页所有功能都点不动，只有底部 tab 还能切（它在这个手势之外）。
-            // 用户实测报回来的原话：「所有功能都用不了，除了滑动动画」。
-            // 教训：**在容器上加手势，会改变整棵子树的命中判定**；
-            //       而这类问题编译、静态检查、拆包自验**一个都发现不了**。
-            //       要拦截点按，只用"自己那一层的" onTapGesture（比如给一个 Color.clear 层），
-            //       绝不要加在 ScrollView 这种包着全部内容的容器上。
-            .scrollDismissesKeyboard(.interactively)
         }
         // 用自绘导航栏取代系统导航栏：设计稿的标题是**居中**的，
         // 而系统导航栏的标题会跟着大标题模式变成左对齐。
