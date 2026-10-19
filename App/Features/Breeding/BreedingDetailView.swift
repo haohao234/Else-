@@ -355,7 +355,7 @@ struct BreedingDetailView: View {
                                       from: cal.startOfDay(for: Date()),
                                       to: cal.startOfDay(for: dueDate)).day ?? 0
 
-        HStack(spacing: DS.Space.s) {
+        return HStack(spacing: DS.Space.s) {
             Image(systemName: days > 0 ? "clock" : "exclamationmark.triangle.fill")
                 .font(.system(size: 13, weight: .medium))
                 .foregroundStyle(days > 0 ? DS.primary : DS.alert)
