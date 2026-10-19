@@ -348,38 +348,64 @@ struct BreedingDetailView: View {
 
     // MARK: 倒计时
 
-    /// 倒计时行："距预产期还有 32 天" 或 "已过预产期 2 天"
+    /// 倒计时卡片：大数字 + 预产日期，渐变底，居中布局
     private func countdownRow(dueDate: Date) -> some View {
         let cal = Calendar.current
         let days = cal.dateComponents([.day],
                                       from: cal.startOfDay(for: Date()),
                                       to: cal.startOfDay(for: dueDate)).day ?? 0
 
-        return HStack(spacing: DS.Space.s) {
-            Image(systemName: days > 0 ? "clock" : "exclamationmark.triangle.fill")
-                .font(.system(size: 13, weight: .medium))
-                .foregroundStyle(days > 0 ? DS.primary : DS.alert)
-            if days > 0 {
-                Text("距预产期还有 \(days) 天")
+        let isUrgent = days <= 7          // 一周内或已过期 → 加急
+        let isOverdue = days < 0
+        let accentColor: Color = isOverdue ? DS.alert : DS.primary
+
+        return VStack(spacing: DS.Space.xs) {
+            // 第一行：图标 + 状态文字
+            HStack(spacing: DS.Space.xxs) {
+                Image(systemName: isOverdue ? "exclamationmark.triangle.fill"
+                             : (isUrgent ? "bell.fill" : "clock"))
+                    .font(.system(size: 14, weight: .semibold))
+                Text(countdownLabel(days: days))
                     .font(DS.Typo.caption)
-                    .foregroundStyle(DS.primary)
-            } else if days == 0 {
-                Text("今天就是预产期")
-                    .font(DS.Typo.caption)
-                    .fontWeight(.semibold)
-                    .foregroundStyle(DS.primary)
-            } else {
-                Text("已过预产期 \(-days) 天")
-                    .font(DS.Typo.caption)
-                    .fontWeight(.semibold)
-                    .foregroundStyle(DS.alert)
+                    .fontWeight(.medium)
             }
-            Spacer(minLength: 0)
+            .foregroundStyle(accentColor)
+
+            // 第二行：大数字（等宽）
+            Text(countdownValue(days: days))
+                .font(DS.Typo.statNumber)
+                .foregroundStyle(accentColor)
+                .monospacedDigit()
+
+            // 第三行：预产日期
+            Text("预产期 \(Formatters.monthDay.string(from: dueDate))")
+                .font(DS.Typo.caption)
+                .foregroundStyle(DS.inkSecondary)
         }
-        .padding(.horizontal, DS.Space.l)
-        .padding(.vertical, DS.Space.s)
-        .background(days >= 0 ? DS.primary.opacity(0.08) : DS.alert.opacity(0.08),
-                     in: RoundedRectangle(cornerRadius: DS.Radius.input, style: .continuous))
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, DS.Space.m)
+        .background(
+            RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous)
+                .fill(isOverdue ? DS.alertSoft : DS.primary.opacity(0.10))
+                .overlay(
+                    RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous)
+                        .strokeBorder(accentColor.opacity(0.20), lineWidth: 1)
+                )
+        )
+    }
+
+    /// 倒计时状态文案
+    private func countdownLabel(days: Int) -> String {
+        if days > 7 { return "距预产期还有" }
+        if days > 0 { return "即将生产" }
+        if days == 0 { return "今天就是预产期" }
+        return "已过预产期"
+    }
+
+    /// 倒计时数字文案
+    private func countdownValue(days: Int) -> String {
+        if days >= 0 { return "\(days) 天" }
+        return "\(-days) 天"
     }
 
     /// 同步预产期提醒（与 BreedingEditView 逻辑一致）
