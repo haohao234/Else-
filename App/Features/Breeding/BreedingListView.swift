@@ -35,10 +35,27 @@ struct BreedingListView: View {
         return allRecords.filter { $0.stage == filter }
     }
 
+    /// 有预产期且尚未生产的记录（按预产期升序，最近的排最前）
+    private var dueSoonRecords: [BreedingRecord] {
+        allRecords.compactMap { record -> (BreedingRecord, Int)? in
+            guard let dueDate = record.expectedDueDate,
+                  record.stage == .mated || record.stage == .pregnant else { return nil }
+            let cal = Calendar.current
+            let days = cal.dateComponents([.day],
+                from: cal.startOfDay(for: Date()),
+                to: cal.startOfDay(for: dueDate)).day ?? 0
+            return (record, days)
+        }
+        .sorted { $0.1 < $1.1 }  // 预产期最近的排前面
+    }
+
     var body: some View {
         VStack(spacing: 0) {
             DSScreenTitle(title: "繁育记录", trailing: AnyView(addButton))
             controls
+            if !dueSoonRecords.isEmpty {
+                countdownBanner
+            }
             content
         }
         .toolbar(.hidden, for: .navigationBar)
@@ -80,6 +97,37 @@ struct BreedingListView: View {
                 .background(active ? AnyShapeStyle(DS.primary) : AnyShapeStyle(DS.surface), in: Capsule())
         }
         .buttonStyle(.plain)
+    }
+
+    // MARK: - 待产倒计时横滚条
+
+    /// 可爱风格的横向滚动倒计时卡片，每张对应一只待产母猫
+    private var countdownBanner: some View {
+        VStack(alignment: .leading, spacing: DS.Space.s) {
+            HStack(spacing: DS.Space.xxs) {
+                Image(systemName: "heart.fill")
+                    .font(.system(size: 11))
+                    .foregroundStyle(DS.alert)
+                Text("待产提醒")
+                    .font(DS.Typo.caption)
+                    .fontWeight(.semibold)
+                    .foregroundStyle(DS.inkSecondary)
+            }
+            .padding(.leading, DS.Space.screenH)
+
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: DS.Space.s) {
+                    ForEach(dueSoonRecords, id: \.record.id) { item in
+                        NavigationLink(value: AppRoute.breedingDetail(item.record.id)) {
+                            DueSoonCard(record: item.record, daysLeft: item.1)
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+                .padding(.horizontal, DS.Space.screenH)
+            }
+        }
+        .padding(.bottom, DS.Space.m)
     }
 
     @ViewBuilder
@@ -190,5 +238,72 @@ struct BreedingRowCard: View {
         .padding(DS.Space.m)
         .frame(maxWidth: .infinity, alignment: .leading)
         .dsRowSurface()
+    }
+}
+
+// MARK: - 待产倒计时卡片（繁育列表页横滚条用）
+
+struct DueSoonCard: View {
+    let record: BreedingRecord
+    let daysLeft: Int
+
+    private var isUrgent: Bool { daysLeft <= 7 && daysLeft >= 0 }
+    private var isOverdue: Bool { daysLeft < 0 }
+    private var accentColor: Color {
+        if isOverdue { return DS.alert }
+        if isUrgent { return Color(hex: 0xE39BC8) }  // 玫红（配搭色）
+        return DS.primary
+    }
+
+    var body: some View {
+        VStack(spacing: DS.Space.s) {
+            // 🐱 猫猫头 + 名字
+            Image(systemName: "cat.fill")
+                .font(.system(size: 28))
+                .foregroundStyle(accentColor)
+                .frame(width: 48, height: 48)
+                .background(accentColor.opacity(0.12), in: Circle())
+
+            Text(record.motherName)
+                .font(DS.Typo.caption)
+                .fontWeight(.medium)
+                .foregroundStyle(DS.ink)
+                .lineLimit(1)
+
+            // 大数字倒计时
+            Text(daysLeft >= 0 ? "\(daysLeft)" : "\(-daysLeft)+")
+                .font(.system(size: 28, weight: .bold, design: .monospaced))
+                .foregroundStyle(accentColor)
+                .monospacedDigit()
+
+            // 状态文案 + 预产日期
+            Text(countdownLabel)
+                .font(.system(size: 11))
+                .foregroundStyle(isOverdue ? DS.alert : DS.inkTertiary)
+
+            if let dueDate = record.expectedDueDate {
+                Text(Formatters.monthDay.string(from: dueDate) + " 预产")
+                    .font(.system(size: 10))
+                    .foregroundStyle(DS.inkTertiary.opacity(0.7))
+            }
+        }
+        .frame(width: 120)
+        .padding(.vertical, DS.Space.m)
+        .background(
+            RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous)
+                .fill(Color.white)
+                .shadow(color: accentColor.opacity(0.08), radius: 8, y: 2)
+                .overlay(
+                    RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous)
+                        .strokeBorder(accentColor.opacity(0.15), lineWidth: 1)
+                )
+        )
+    }
+
+    private var countdownLabel: String {
+        if daysLeft > 7 { return "天后预产" }
+        if daysLeft > 0 { return "即将生产" }
+        if daysLeft == 0 { return "今天预产期" }
+        return "已过期"
     }
 }
