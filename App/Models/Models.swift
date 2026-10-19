@@ -21,18 +21,16 @@ enum CatGender: String, Codable, CaseIterable, Identifiable {
 
 /// 种猫状态。**顺序即显示顺序**，与画布列表的筛选芯片一致。
 enum CatStatus: String, Codable, CaseIterable, Identifiable {
-    case breeding     // 繁育中
-    case mating       // 配种中
-    case pregnant     // 怀孕中
-    case born         // 已生产
-    case retired      // 已退役
+    case awaitingBirth  // 待产中（原 breeding，rawValue 不变以保证旧数据兼容）
+    case pregnant       // 怀孕中
+    case born           // 已生产
+    case retired        // 已退役
 
     var id: String { rawValue }
 
     var label: String {
         switch self {
-        case .breeding: return "繁育中"
-        case .mating: return "配种中"
+        case .awaitingBirth: return "待产中"
         case .pregnant: return "怀孕中"
         case .born: return "已生产"
         case .retired: return "已退役"
@@ -43,8 +41,7 @@ enum CatStatus: String, Codable, CaseIterable, Identifiable {
     /// 进行中的用实心主色，已完成的用主色浅底，终态用中性浅底，只有需关注才给警示色。
     var tone: DSChipTone {
         switch self {
-        case .breeding, .pregnant: return .current
-        case .mating: return .done
+        case .awaitingBirth, .pregnant: return .current
         case .born: return .mid
         case .retired: return .archived
         }

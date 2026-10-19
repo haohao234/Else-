@@ -89,6 +89,13 @@ struct BreedingDetailView: View {
                     .foregroundStyle(DS.inkTertiary)
                     .fixedSize(horizontal: false, vertical: true)
             }
+
+            // 倒计时：有预产期且尚未生产时显示
+            if let ed = draft.expectedDueDate ?? record.expectedDueDate,
+               previewStage == .mated || previewStage == .pregnant {
+                countdownRow(dueDate: ed)
+            }
+
             NavigationLink(value: AppRoute.breedingEdit(record.id)) {
                 HStack(spacing: DS.Space.xxs) {
                     Image(systemName: "pencil")
@@ -330,7 +337,75 @@ struct BreedingDetailView: View {
         record.kittenCount = draft.kittenCount
         record.note = draft.note
         store.upsert(breeding: record)
+
+        // 同步预产期提醒：如果预产期变了，更新对应的提醒
+        if let dueDate = draft.expectedDueDate {
+            syncDueReminder(record: record, dueDate: dueDate)
+        }
+
         dismiss()
+    }
+
+    // MARK: 倒计时
+
+    /// 倒计时行："距预产期还有 32 天" 或 "已过预产期 2 天"
+    private func countdownRow(dueDate: Date) -> some View {
+        let cal = Calendar.current
+        let days = cal.dateComponents([.day],
+                                      from: cal.startOfDay(for: Date()),
+                                      to: cal.startOfDay(for: dueDate)).day ?? 0
+
+        HStack(spacing: DS.Space.s) {
+            Image(systemName: days > 0 ? "clock" : "exclamationmark.triangle.fill")
+                .font(.system(size: 13, weight: .medium))
+                .foregroundStyle(days > 0 ? DS.primary : DS.alert)
+            if days > 0 {
+                Text("距预产期还有 \(days) 天")
+                    .font(DS.Typo.caption)
+                    .foregroundStyle(DS.primary)
+            } else if days == 0 {
+                Text("今天就是预产期")
+                    .font(DS.Typo.caption)
+                    .fontWeight(.semibold)
+                    .foregroundStyle(DS.primary)
+            } else {
+                Text("已过预产期 \(-days) 天")
+                    .font(DS.Typo.caption)
+                    .fontWeight(.semibold)
+                    .foregroundStyle(DS.alert)
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, DS.Space.l)
+        .padding(.vertical, DS.Space.s)
+        .background(days >= 0 ? DS.primary.opacity(0.08) : DS.alert.opacity(0.08),
+                     in: RoundedRectangle(cornerRadius: DS.Radius.input, style: .continuous))
+    }
+
+    /// 同步预产期提醒（与 BreedingEditView 逻辑一致）
+    private func syncDueReminder(record: BreedingRecord, dueDate: Date) {
+        let cal = Calendar.current
+        guard let reminderTime = cal.date(bySettingHour: 9, minute: 0, second: 0, of: dueDate) else { return }
+        let motherName = record.motherName
+
+        let existing = store.data.reminders.first { r in
+            r.kind == .dueDate && r.catID == record.motherID
+            && r.detail.contains("预产期")
+        }
+
+        if var ex = existing {
+            ex.title = "\(motherName) · 预产期"
+            ex.detail = "预计 \(Formatters.monthDay.string(from: dueDate)) 生产，请提前准备产房与保温箱"
+            ex.dueDate = reminderTime
+            store.upsert(reminder: ex)
+        } else {
+            let newRem = Reminder(kind: .dueDate,
+                                   title: "\(motherName) · 预产期",
+                                   detail: "预计 \(Formatters.monthDay.string(from: dueDate)) 生产，请提前准备产房与保温箱",
+                                   dueDate: reminderTime,
+                                   catID: record.motherID)
+            store.upsert(reminder: newRem)
+        }
     }
 }
 

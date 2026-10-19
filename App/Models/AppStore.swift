@@ -485,10 +485,10 @@ extension AppData {
                         weightKg: 3.8, status: .pregnant, litterCount: 1)
         let leo = Cat(name: "Leo", callName: "里奥", gender: .male, breed: "英国短毛猫",
                       coat: "蓝猫 British Blue", birthDate: month(-32, day: 3),
-                      weightKg: 4.8, status: .breeding, litterCount: 3)
+                      weightKg: 4.8, status: .awaitingBirth, litterCount: 3)
         let xueqiu = Cat(name: "雪球", callName: "球球", gender: .female, breed: "英国短毛猫",
                          coat: "蓝金渐层 Blue Golden", birthDate: month(-20, day: 9),
-                         weightKg: 3.4, status: .mating, litterCount: 0)
+                         weightKg: 3.4, status: .awaitingBirth, litterCount: 0)
         let niangao = Cat(name: "年糕", callName: "糕糕", gender: .female, breed: "英国长毛猫",
                           coat: "金渐层长毛 Golden", birthDate: month(-41, day: 22),
                           weightKg: 4.2, status: .born, litterCount: 1)

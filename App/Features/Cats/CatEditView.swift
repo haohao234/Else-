@@ -164,8 +164,7 @@ struct CatEditView: View {
 
     private var statusHint: String {
         switch draft.status {
-        case .breeding: return "在繁育计划里，可以参与配对"
-        case .mating: return "正在配种，等确认怀孕"
+        case .awaitingBirth: return "在繁育计划里，可以参与配对"
         case .pregnant: return "已确认怀孕，注意预产期提醒"
         case .born: return "刚生产完，正在带小猫"
         case .retired: return "不再参与繁育，档案保留"
@@ -275,7 +274,7 @@ private struct CatDraft: Equatable {
     var coat = ""
     var birthDate = Date()
     var weightText = ""
-    var status: CatStatus = .breeding
+    var status: CatStatus = .awaitingBirth
 
     init() { }
 
