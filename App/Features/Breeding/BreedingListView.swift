@@ -36,17 +36,17 @@ struct BreedingListView: View {
     }
 
     /// 有预产期且尚未生产的记录（按预产期升序，最近的排最前）
-    private var dueSoonRecords: [BreedingRecord] {
-        allRecords.compactMap { record -> (BreedingRecord, Int)? in
+    private var dueSoonRecords: [DueSoonItem] {
+        let items = allRecords.compactMap { record -> DueSoonItem? in
             guard let dueDate = record.expectedDueDate,
                   record.stage == .mated || record.stage == .pregnant else { return nil }
             let cal = Calendar.current
             let days = cal.dateComponents([.day],
                 from: cal.startOfDay(for: Date()),
                 to: cal.startOfDay(for: dueDate)).day ?? 0
-            return (record, days)
+            return DueSoonItem(record: record, daysLeft: days)
         }
-        .sorted { $0.1 < $1.1 }  // 预产期最近的排前面
+        return items.sorted { $0.daysLeft < $1.daysLeft }
     }
 
     var body: some View {
@@ -117,9 +117,9 @@ struct BreedingListView: View {
 
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: DS.Space.s) {
-                    ForEach(dueSoonRecords, id: \.record.id) { item in
+                    ForEach(dueSoonRecords) { item in
                         NavigationLink(value: AppRoute.breedingDetail(item.record.id)) {
-                            DueSoonCard(record: item.record, daysLeft: item.1)
+                            DueSoonCard(record: item.record, daysLeft: item.daysLeft)
                         }
                         .buttonStyle(.plain)
                     }
@@ -238,6 +238,20 @@ struct BreedingRowCard: View {
         .padding(DS.Space.m)
         .frame(maxWidth: .infinity, alignment: .leading)
         .dsRowSurface()
+    }
+}
+
+// MARK: - 待产倒计时数据项
+
+private struct DueSoonItem: Identifiable {
+    let id: UUID  // = record.id
+    let record: BreedingRecord
+    let daysLeft: Int
+
+    init(record: BreedingRecord, daysLeft: Int) {
+        self.id = record.id
+        self.record = record
+        self.daysLeft = daysLeft
     }
 }
 
