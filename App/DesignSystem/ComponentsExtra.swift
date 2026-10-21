@@ -608,6 +608,99 @@ struct DSCategoryGrid: View {
     }
 }
 
+// MARK: - 左滑删除行
+
+/// 包装任意行内容，加左滑手势滑出删除按钮。
+///
+/// 为什么不用 List 的 swipeActions：本项目的行都是自定义 DSListRow 放在 VStack 里，
+/// 不是 List 的 cell，所以系统 swipeActions 不可用。用 DragGesture 手写。
+///
+/// 交互规则：
+///   · 左滑超过 60pt → 展开删除按钮
+///   · 左滑超过 140pt → 松手直接删除（带淡出动画）
+///   · 不到 60pt → 弹回原位
+struct SwipeableRow<Content: View>: View {
+    let onDelete: () -> Void
+    @ViewBuilder let content: Content
+
+    @State private var offset: CGFloat = 0
+    @State private var showDelete = false
+
+    private let revealThreshold: CGFloat = -60
+    private let deleteThreshold: CGFloat = -140
+
+    init(onDelete: @escaping () -> Void, @ViewBuilder content: () -> Content) {
+        self.onDelete = onDelete
+        self.content = content()
+    }
+
+    var body: some View {
+        ZStack(alignment: .trailing) {
+            // 删除按钮（底层，红色背景）
+            if showDelete || offset < -20 {
+                Button {
+                    withAnimation(.easeOut(duration: 0.25)) {
+                        offset = -500  // 滑出屏幕
+                    }
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
+                        onDelete()
+                    }
+                } label: {
+                    Image(systemName: "trash.fill")
+                        .font(.system(size: 16))
+                        .foregroundStyle(.white)
+                        .frame(width: 60)
+                        .frame(maxHeight: .infinity)
+                        .background(DS.alert)
+                }
+                .buttonStyle(.plain)
+                .transition(.opacity)
+            }
+
+            // 主内容（上层，随手势偏移）
+            content
+                .offset(x: offset)
+                .gesture(
+                    DragGesture(minimumDistance: 20)
+                        .onChanged { value in
+                            let w = value.translation.width
+                            if w < 0 {
+                                offset = w
+                            } else if showDelete {
+                                // 已展开时右滑回去
+                                offset = revealThreshold + w
+                            }
+                        }
+                        .onEnded { value in
+                            let w = value.translation.width
+                            if w < deleteThreshold {
+                                // 滑得够远 → 直接删除
+                                withAnimation(.easeOut(duration: 0.25)) {
+                                    offset = -500
+                                }
+                                DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
+                                    onDelete()
+                                }
+                            } else if w < revealThreshold {
+                                // 滑了一半 → 展开删除按钮
+                                withAnimation(.spring(response: 0.3)) {
+                                    showDelete = true
+                                    offset = revealThreshold
+                                }
+                            } else {
+                                // 没滑够 → 弹回
+                                withAnimation(.spring(response: 0.3)) {
+                                    showDelete = false
+                                    offset = 0
+                                }
+                            }
+                        }
+                )
+        }
+        .clipped()
+    }
+}
+
 /// 月份切换（记账页顶部）：「‹ 2026 年 10 月 ›」。
 /// 不用系统 DatePicker 选月份 —— 那是"挑一个具体日子"，而这里要的是"翻月份"。
 struct DSMonthSwitcher: View {

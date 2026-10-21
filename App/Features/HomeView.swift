@@ -23,8 +23,8 @@ struct HomeView: View {
             ScrollView {
                 VStack(spacing: DS.Space.l) {
                     statsCard
+                    catsSection
                     remindersSection
-                    breedingSection
                     financeSection
                 }
                 .padding(.horizontal, DS.Space.screenH)
@@ -72,135 +72,210 @@ struct HomeView: View {
         }
     }
 
-    // MARK: 今日提醒
+    // MARK: 种猫横滑区
+
+    /// 首页顶部横向滑动的种猫头像栏，点击进详情
+    private var catsSection: some View {
+        VStack(spacing: DS.Space.s) {
+            DSSectionHeader(title: "我的种猫",
+                            actionTitle: "\(store.data.cats.count) 只",
+                            onAction: { nav.go(to: "cats") })
+            if store.data.cats.isEmpty {
+                DSCard {
+                    Text("还没有种猫档案")
+                        .font(DS.Typo.rowTitle)
+                        .foregroundStyle(DS.ink)
+                    Text("去「种猫」页建第一只，之后配对、记账都挂在它名下")
+                        .font(DS.Typo.caption)
+                        .foregroundStyle(DS.inkTertiary)
+                }
+            } else {
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: DS.Space.m) {
+                        ForEach(store.data.cats) { cat in
+                            NavigationLink(value: AppRoute.catDetail(cat.id)) {
+                                VStack(spacing: DS.Space.xs) {
+                                    DSCatAvatar(name: cat.name,
+                                                image: store.avatarImage(named: cat.avatarFileName),
+                                                size: 52)
+                                    Text(cat.name)
+                                        .font(DS.Typo.caption)
+                                        .foregroundStyle(DS.ink)
+                                        .lineLimit(1)
+                                    Text(cat.status.label)
+                                        .font(.system(size: 10))
+                                        .foregroundStyle(DS.inkTertiary)
+                                }
+                                .frame(width: 72)
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // MARK: 提醒日历 + 今日待办
 
     private var remindersSection: some View {
         VStack(spacing: DS.Space.s) {
-            DSSectionHeader(title: "今日提醒",
+            DSSectionHeader(title: "提醒日历",
                             actionTitle: "全部 \(store.openReminders.count) 条",
                             onAction: { nav.homePath.append(.reminders) })
-            if store.openReminders.isEmpty {
+
+            // 迷你日历：有提醒的日期标彩色圆点
+            reminderCalendar
+
+            // 今日待办（醒目突出）
+            if !todayReminders.isEmpty {
+                VStack(spacing: DS.Space.s) {
+                    HStack(spacing: DS.Space.xxs) {
+                        Image(systemName: "exclamationmark.circle.fill")
+                            .font(.system(size: 12))
+                            .foregroundStyle(DS.alert)
+                        Text("今天要做")
+                            .font(DS.Typo.caption)
+                            .fontWeight(.semibold)
+                            .foregroundStyle(DS.alert)
+                        Spacer(minLength: 0)
+                    }
+                    ForEach(todayReminders) { reminder in
+                        NavigationLink(value: AppRoute.reminders) {
+                            DSListRow {
+                                let overdue = reminder.urgency == .overdue
+                                DSIconTile(systemName: reminder.kind.symbol,
+                                           tint: overdue ? DS.alert : DS.primary,
+                                           background: overdue ? DS.alertSoft : DS.surfaceSoft)
+                                VStack(alignment: .leading, spacing: DS.Space.xxs) {
+                                    Text(reminder.title).font(DS.Typo.rowTitle).foregroundStyle(DS.ink)
+                                    Text(reminder.subtitle)
+                                        .font(DS.Typo.caption)
+                                        .foregroundStyle(overdue ? DS.alert : DS.inkTertiary)
+                                }
+                                Spacer(minLength: 0)
+                                DSStatusChip(text: reminder.dueLabel.text,
+                                             tone: reminder.dueLabel.isOverdue ? .alert : .current)
+                            }
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+            } else if store.openReminders.isEmpty {
                 DSCard {
                     Text("眼下没有待办")
                         .font(DS.Typo.rowTitle)
                         .foregroundStyle(DS.ink)
-                    Text("疫苗、驱虫、称重、B 超、预产期都会出现在这里")
+                    Text("疫苗、驱虫、称重、预产期都会出现在这里")
                         .font(DS.Typo.caption)
                         .foregroundStyle(DS.inkTertiary)
                 }
-            } else {
-                ForEach(store.openReminders.prefix(2)) { reminder in
-                    NavigationLink(value: AppRoute.reminders) {
-                        DSListRow {
-                            let overdue = reminder.urgency == .overdue
-                            DSIconTile(systemName: reminder.kind.symbol,
-                                       tint: overdue ? DS.alert : DS.primary,
-                                       background: overdue ? DS.alertSoft : DS.surfaceSoft)
-                            VStack(alignment: .leading, spacing: DS.Space.xxs) {
-                                Text(reminder.title).font(DS.Typo.rowTitle).foregroundStyle(DS.ink)
-                                Text(reminder.subtitle)
-                                    .font(DS.Typo.caption)
-                                    .foregroundStyle(overdue ? DS.alert : DS.inkTertiary)
-                            }
-                            Spacer(minLength: 0)
-                            DSStatusChip(text: reminder.dueLabel.text,
-                                         tone: reminder.dueLabel.isOverdue ? .alert : .archived)
-                        }
-                    }
-                    .buttonStyle(.plain)
-                }
-            }
-        }
-    }
-
-    // MARK: 繁育进度
-
-    private var breedingSection: some View {
-        VStack(spacing: DS.Space.s) {
-            DSSectionHeader(title: "繁育进度",
-                            actionTitle: "\(store.data.breedings.count) 条",
-                            onAction: { nav.go(to: "breeding") })
-            if let record = store.breedingsWithNames.first {
-                NavigationLink(value: AppRoute.breedingDetail(record.id)) {
-                    VStack(alignment: .leading, spacing: DS.Space.s) {
-                        HStack {
-                            VStack(alignment: .leading, spacing: 3) {
-                                Text(record.title).font(DS.Typo.cardTitle).foregroundStyle(DS.ink)
-                                Text(record.progressLine)
-                                    .font(DS.Typo.caption)
-                                    .foregroundStyle(DS.inkTertiary)
-                            }
-                            Spacer(minLength: DS.Space.s)
-                            DSStatusChip(text: record.stage.label, tone: record.stage.tone)
-                        }
-                        DSStageProgress(filled: record.stage.completedCount)
-                        HStack(spacing: 0) {
-                            // ⚠️ 不要写 `ForEach(Array(x.enumerated()), id: \.offset)`：
-                            // 指向**元组成员**的 key path 在 Swift 里不受支持，换个编译器版本就炸。
-                            // 这里改用 Identifiable 的枚举本身，当前项靠比较枚举值拿。
-                            ForEach(BreedingStage.allCases) { stage in
-                                let isCurrent = stage == record.stage
-                                Text(stage.label)
-                                    .font(.system(size: 10, weight: isCurrent ? .semibold : .regular))
-                                    .foregroundStyle(isCurrent ? DS.primary : DS.inkTertiary)
-                                    .frame(maxWidth: .infinity,
-                                           alignment: stage == .mated ? .leading : (stage == .weaned ? .trailing : .center))
-                            }
-                        }
-                        HStack {
-                            Text(dueHint(record))
-                                .font(DS.Typo.caption)
-                                .foregroundStyle(DS.inkTertiary)
-                            Spacer(minLength: DS.Space.s)
-                            Text("查看详情")
-                                .font(.system(size: 11, weight: .semibold))
-                                .foregroundStyle(DS.primary)
-                        }
-                    }
-                    .padding(DS.Space.l)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .dsCardSurface(radius: DS.Radius.cardLarge)
-                }
-                .buttonStyle(.plain)
             } else {
                 DSCard {
-                    Text("还没有繁育记录")
-                        .font(DS.Typo.rowTitle)
-                        .foregroundStyle(DS.ink)
-                    Text("在「繁育」里新建一条配对，四个阶段都会在这里推进")
-                        .font(DS.Typo.caption)
-                        .foregroundStyle(DS.inkTertiary)
+                    HStack(spacing: DS.Space.s) {
+                        Image(systemName: "checkmark.circle")
+                            .foregroundStyle(DS.CategoryTint.sale)
+                        Text("今天没有待办，最近的在 \(nearestReminderDay)")
+                            .font(DS.Typo.caption)
+                            .foregroundStyle(DS.inkSecondary)
+                    }
                 }
             }
         }
     }
 
-    /// 首页那一行提示：怀孕的记录报预产期，其余报最近一次动作，没有日期就说清"还没开始"。
-    private func dueHint(_ record: BreedingRecord) -> String {
-        switch record.stage {
-        case .pregnant:
-            if let due = record.expectedDueDate {
-                let days = Calendar.current.dateComponents([.day], from: Date(), to: due).day ?? 0
-                if days >= 0 { return "预产期 \(Formatters.monthDay.string(from: due)) · 还有 \(days) 天" }
-                return "预产期已过 \(Formatters.monthDay.string(from: due))，记得更新进展"
+    /// 今天的提醒（含逾期）
+    private var todayReminders: [Reminder] {
+        store.openReminders.filter { $0.urgency == .today || $0.urgency == .overdue }
+    }
+
+    /// 最近一个有待办的日期文案
+    private var nearestReminderDay: String {
+        guard let next = store.openReminders.first else { return "--" }
+        let days = Calendar.current.dateComponents([.day], from: Date(), to: next.dueDate).day ?? 0
+        if days <= 0 { return "今天" }
+        if days == 1 { return "明天" }
+        return "\(days) 天后"
+    }
+
+    /// 迷你提醒日历：本月日历格子，有提醒的日期标圆点
+    private var reminderCalendar: some View {
+        let cal = Calendar.current
+        let month = Date()
+        let reminderDays = daysWithReminders(in: month)
+
+        return DSCard {
+            VStack(spacing: DS.Space.xs) {
+                // 星期头
+                let symbols = ["一", "二", "三", "四", "五", "六", "日"]
+                HStack(spacing: 0) {
+                    ForEach(symbols, id: \.self) { s in
+                        Text(s)
+                            .font(.system(size: 10, weight: .medium))
+                            .foregroundStyle(DS.inkFaint)
+                            .frame(maxWidth: .infinity)
+                    }
+                }
+                // 日期格子
+                let cells = calendarCells(for: month)
+                LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: DS.Space.xxs), count: 7),
+                          spacing: DS.Space.xxs) {
+                    ForEach(cells.indices, id: \.self) { i in
+                        if let day = cells[i] {
+                            let isToday = cal.isDateInToday(dateFor(day: day, in: month))
+                            let hasReminder = reminderDays.contains(day)
+                            VStack(spacing: 1) {
+                                Text("\(day)")
+                                    .font(.system(size: 12, weight: isToday ? .bold : .regular))
+                                    .foregroundStyle(isToday ? .white : DS.ink)
+                                Circle()
+                                    .fill(hasReminder ? (isToday ? Color.white : DS.primary) : Color.clear)
+                                    .frame(width: 4, height: 4)
+                            }
+                            .frame(maxWidth: .infinity)
+                            .frame(height: 32)
+                            .background(
+                                isToday ? DS.primary : Color.clear,
+                                in: RoundedRectangle(cornerRadius: 8, style: .continuous)
+                            )
+                        } else {
+                            Color.clear.frame(height: 32)
+                        }
+                    }
+                }
             }
-            return "已确认怀孕，还没填预产期"
-        case .mated:
-            if let mated = record.matedDate {
-                return "配种 \(Formatters.monthDay.string(from: mated)) · 等确认怀孕"
-            }
-            return "还没填配对日期"
-        case .birth:
-            if let born = record.birthDate {
-                return "生产 \(Formatters.monthDay.string(from: born)) · 等出窝"
-            }
-            return "已生产，还没填生产日期"
-        case .weaned:
-            if let weaned = record.weanedDate {
-                return "出窝 \(Formatters.monthDay.string(from: weaned))"
-            }
-            return "已出窝"
         }
+    }
+
+    /// 本月有提醒的日期集合
+    private func daysWithReminders(in month: Date) -> Set<Int> {
+        let cal = Calendar.current
+        var days = Set<Int>()
+        for r in store.data.reminders where !r.isDone {
+            if cal.isDate(r.dueDate, equalTo: month, toGranularity: .month) {
+                days.insert(cal.component(.day, from: r.dueDate))
+            }
+        }
+        return days
+    }
+
+    /// 生成日历格子数组（前面补 nil 占位）
+    private func calendarCells(for month: Date) -> [Int?] {
+        let cal = Calendar.current
+        guard let range = cal.range(of: .day, in: .month, for: month),
+              let firstDay = cal.date(from: cal.dateComponents([.year, .month], from: month))
+        else { return [] }
+        let weekday = cal.component(.weekday, from: firstDay)
+        // 周一起始：周日=7→6, 周一=2→0, ...
+        let leading = (weekday + 5) % 7
+        return Array(repeating: nil, count: leading) + range.map { Optional($0) }
+    }
+
+    private func dateFor(day: Int, in month: Date) -> Date {
+        let cal = Calendar.current
+        var comps = cal.dateComponents([.year, .month], from: month)
+        comps.day = day
+        return cal.date(from: comps) ?? month
     }
 
     // MARK: 本月支出

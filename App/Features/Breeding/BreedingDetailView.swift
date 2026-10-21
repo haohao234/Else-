@@ -337,12 +337,6 @@ struct BreedingDetailView: View {
         record.kittenCount = draft.kittenCount
         record.note = draft.note
         store.upsert(breeding: record)
-
-        // 同步预产期提醒：如果预产期变了，更新对应的提醒
-        if let dueDate = draft.expectedDueDate {
-            syncDueReminder(record: record, dueDate: dueDate)
-        }
-
         dismiss()
     }
 
@@ -406,32 +400,6 @@ struct BreedingDetailView: View {
     private func countdownValue(days: Int) -> String {
         if days >= 0 { return "\(days) 天" }
         return "\(-days) 天"
-    }
-
-    /// 同步预产期提醒（与 BreedingEditView 逻辑一致）
-    private func syncDueReminder(record: BreedingRecord, dueDate: Date) {
-        let cal = Calendar.current
-        guard let reminderTime = cal.date(bySettingHour: 9, minute: 0, second: 0, of: dueDate) else { return }
-        let motherName = record.motherName
-
-        let existing = store.data.reminders.first { r in
-            r.kind == .dueDate && r.catID == record.motherID
-            && r.detail.contains("预产期")
-        }
-
-        if var ex = existing {
-            ex.title = "\(motherName) · 预产期"
-            ex.detail = "预计 \(Formatters.monthDay.string(from: dueDate)) 生产，请提前准备产房与保温箱"
-            ex.dueDate = reminderTime
-            store.upsert(reminder: ex)
-        } else {
-            let newRem = Reminder(kind: .dueDate,
-                                   title: "\(motherName) · 预产期",
-                                   detail: "预计 \(Formatters.monthDay.string(from: dueDate)) 生产，请提前准备产房与保温箱",
-                                   dueDate: reminderTime,
-                                   catID: record.motherID)
-            store.upsert(reminder: newRem)
-        }
     }
 }
 

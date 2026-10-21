@@ -137,8 +137,10 @@ struct BreedingListView: View {
                         NavigationLink(value: AppRoute.breedingDetail(record.id)) {
                             ActiveRecordCard(
                                 record: record,
+                                hasReminder: hasDueReminder(record),
                                 onQuickBirth: { birthSheetRecord = record },
-                                onQuickPregnant: { confirmPregnant(record) }
+                                onQuickPregnant: { confirmPregnant(record) },
+                                onToggleReminder: { toggleDueReminder(record) }
                             )
                         }
                         .buttonStyle(.plain)
@@ -230,14 +232,43 @@ struct BreedingListView: View {
         r.weanedDate = Date()
         store.upsert(breeding: r)
     }
+
+    /// 开关预产期提醒：有就删，没有就建
+    private func toggleDueReminder(_ record: BreedingRecord) {
+        let existing = store.data.reminders.first { r in
+            r.kind == .dueDate && r.catID == record.motherID && r.detail.contains("预产期")
+        }
+        if let ex = existing {
+            store.deleteReminder(id: ex.id)
+        } else if let dueDate = record.expectedDueDate {
+            let cal = Calendar.current
+            guard let reminderTime = cal.date(bySettingHour: 9, minute: 0, second: 0, of: dueDate) else { return }
+            let motherName = record.motherName
+            let rem = Reminder(kind: .dueDate,
+                               title: "\(motherName) · 预产期",
+                               detail: "预计 \(Formatters.monthDay.string(from: dueDate)) 生产，请提前准备产房与保温箱",
+                               dueDate: reminderTime,
+                               catID: record.motherID)
+            store.upsert(reminder: rem)
+        }
+    }
+
+    /// 某条繁育记录是否有预产期提醒
+    private func hasDueReminder(_ record: BreedingRecord) -> Bool {
+        store.data.reminders.contains { r in
+            r.kind == .dueDate && r.catID == record.motherID && r.detail.contains("预产期") && !r.isDone
+        }
+    }
 }
 
 // MARK: - 待产卡片（倒计时为中心）
 
 struct ActiveRecordCard: View {
     let record: BreedingRecord
+    let hasReminder: Bool
     let onQuickBirth: () -> Void
     let onQuickPregnant: () -> Void
+    let onToggleReminder: () -> Void
 
     private var daysLeft: Int? {
         guard let dueDate = record.expectedDueDate else { return nil }
@@ -267,6 +298,13 @@ struct ActiveRecordCard: View {
                     .foregroundStyle(DS.ink)
                     .lineLimit(1)
                 Spacer(minLength: DS.Space.s)
+                // 倒计时提醒开关：点一下开/关预产期通知
+                Button(action: onToggleReminder) {
+                    Image(systemName: hasReminder ? "bell.fill" : "bell.slash")
+                        .font(.system(size: 14))
+                        .foregroundStyle(hasReminder ? DS.primary : DS.inkFaint)
+                }
+                .buttonStyle(.plain)
                 DSStatusChip(text: record.stage.label, tone: record.stage.tone)
             }
 

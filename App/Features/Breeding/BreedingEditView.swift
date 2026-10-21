@@ -22,8 +22,6 @@ struct BreedingEditView: View {
     @State private var pregnancyCycleText = "65"
     @State private var note = ""
     @State private var didLoad = false
-    /// 保存成功后是否自动创建了提醒（用于给用户一句反馈）
-    @State private var reminderCreated = false
 
     init(editingID: UUID?) {
         self.editingID = editingID
@@ -69,9 +67,6 @@ struct BreedingEditView: View {
             }
             parentsCard
             datesCard
-            if reminderCreated {
-                reminderFeedback
-            }
         }
         .safeAreaInset(edge: .bottom) { saveBar }
         .onAppear(perform: loadIfNeeded)
@@ -162,33 +157,6 @@ struct BreedingEditView: View {
         }
     }
 
-    // MARK: 提醒创建反馈
-
-    private var reminderFeedback: some View {
-        DSCard {
-            HStack(spacing: DS.Space.m) {
-                Image(systemName: "bell.badge")
-                    .font(.system(size: 16))
-                    .foregroundStyle(DS.primary)
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("已创建预产期提醒")
-                        .font(DS.Typo.rowTitle)
-                        .foregroundStyle(DS.ink)
-                    Text("将在 \(dueDateDate) 提醒你 · 可在「提醒」页查看或修改")
-                        .font(DS.Typo.caption)
-                        .foregroundStyle(DS.inkTertiary)
-                }
-                Spacer(minLength: 0)
-            }
-        }
-    }
-
-    /// 预产期的完整日期文案（用于反馈卡片）
-    private var dueDateDate: String {
-        guard let d = calculatedDueDate else { return "--" }
-        return Formatters.monthDayTime.string(from: d)
-    }
-
     // MARK: 底部保存
 
     private var saveBar: some View {
@@ -245,10 +213,6 @@ struct BreedingEditView: View {
             existing.expectedDueDate = dueDate
             existing.note = note
             store.upsert(breeding: existing)
-            // 编辑模式也同步更新预产期提醒
-            if let dueDate {
-                upsertDueReminder(breedingID: id, motherID: motherID, dueDate: dueDate)
-            }
         } else {
             let record = BreedingRecord(code: code.trimmed,
                                         motherID: motherID,
@@ -257,44 +221,7 @@ struct BreedingEditView: View {
                                         expectedDueDate: dueDate,
                                         note: note)
             store.upsert(breeding: record)
-            // 新建时自动创建预产期提醒
-            if let dueDate {
-                upsertDueReminder(breedingID: record.id, motherID: motherID, dueDate: dueDate)
-                reminderCreated = true
-            }
         }
         dismiss()
-    }
-
-    // MARK: 自动创建 / 更新预产期提醒
-
-    /// 为指定繁育记录创建或更新预产期提醒。
-    /// 如果该繁育记录已经有一条 dueDate 类型的提醒，则更新它；否则新建。
-    private func upsertDueReminder(breedingID: UUID, motherID: UUID, dueDate: Date) {
-        let cal = Calendar.current
-        // 提醒设在当天 9:00
-        guard let reminderTime = cal.date(bySettingHour: 9, minute: 0, second: 0, of: dueDate) else { return }
-
-        let motherName = store.cat(id: motherID)?.name ?? "母猫"
-
-        // 查找是否已有这条繁育记录的预产期提醒
-        let existing = store.data.reminders.first { r in
-            r.kind == .dueDate && r.catID == motherID
-            && r.detail.contains("预产期")
-        }
-
-        if var ex = existing {
-            ex.title = "\(motherName) · 预产期"
-            ex.detail = "预计 \(Formatters.monthDay.string(from: dueDate)) 生产，请提前准备产房与保温箱"
-            ex.dueDate = reminderTime
-            store.upsert(reminder: ex)
-        } else {
-            let newRem = Reminder(kind: .dueDate,
-                                   title: "\(motherName) · 预产期",
-                                   detail: "预计 \(Formatters.monthDay.string(from: dueDate)) 生产，请提前准备产房与保温箱",
-                                   dueDate: reminderTime,
-                                   catID: motherID)
-            store.upsert(reminder: newRem)
-        }
     }
 }

@@ -30,7 +30,7 @@ struct RemindersView: View {
                 HStack(spacing: DS.Space.xxs) {
                     Image(systemName: "hand.tap")
                         .font(.system(size: 10))
-                    Text("点一下 = 完成 · 长按 = 改日期或删除")
+                    Text("点一下 = 完成 · 左滑 = 删除 · 长按 = 改日期")
                         .font(.system(size: 11))
                     Spacer(minLength: 0)
                 }
@@ -110,37 +110,40 @@ struct RemindersView: View {
 
     private func row(_ reminder: Reminder) -> some View {
         let overdue = reminder.urgency == .overdue
-        return Button {
-            store.toggleReminder(id: reminder.id)
+        return SwipeableRow(onDelete: {
+            store.deleteReminder(id: reminder.id)
             NotificationService.reschedule(reminders: store.data.reminders)
-        } label: {
-            DSListRow {
-                DSIconTile(systemName: reminder.kind.symbol,
-                           tint: overdue ? DS.alert : DS.primary,
-                           background: overdue ? DS.alertSoft : DS.surfaceSoft)
-                VStack(alignment: .leading, spacing: DS.Space.xxs) {
-                    Text(reminder.title)
-                        .font(DS.Typo.rowTitle)
-                        .foregroundStyle(DS.ink)
-                        .multilineTextAlignment(.leading)
-                    Text(reminder.subtitle)
-                        .font(DS.Typo.caption)
-                        .foregroundStyle(overdue ? DS.alert : DS.inkTertiary)
-                        .multilineTextAlignment(.leading)
-                }
-                Spacer(minLength: DS.Space.s)
-                VStack(alignment: .trailing, spacing: DS.Space.xs) {
-                    DSStatusChip(text: reminder.dueLabel.text,
-                                 tone: reminder.dueLabel.isOverdue ? .alert : .archived)
-                    Image(systemName: "circle")
-                        .font(.system(size: 17))
-                        .foregroundStyle(DS.inkFaint)
+        }) {
+            Button {
+                store.toggleReminder(id: reminder.id)
+                NotificationService.reschedule(reminders: store.data.reminders)
+            } label: {
+                DSListRow {
+                    DSIconTile(systemName: reminder.kind.symbol,
+                               tint: overdue ? DS.alert : DS.primary,
+                               background: overdue ? DS.alertSoft : DS.surfaceSoft)
+                    VStack(alignment: .leading, spacing: DS.Space.xxs) {
+                        Text(reminder.title)
+                            .font(DS.Typo.rowTitle)
+                            .foregroundStyle(DS.ink)
+                            .multilineTextAlignment(.leading)
+                        Text(reminder.subtitle)
+                            .font(DS.Typo.caption)
+                            .foregroundStyle(overdue ? DS.alert : DS.inkTertiary)
+                            .multilineTextAlignment(.leading)
+                    }
+                    Spacer(minLength: DS.Space.s)
+                    VStack(alignment: .trailing, spacing: DS.Space.xs) {
+                        DSStatusChip(text: reminder.dueLabel.text,
+                                     tone: reminder.dueLabel.isOverdue ? .alert : .archived)
+                        Image(systemName: "circle")
+                            .font(.system(size: 17))
+                            .foregroundStyle(DS.inkFaint)
+                    }
                 }
             }
+            .buttonStyle(.plain)
         }
-        .buttonStyle(.plain)
-        // 长按菜单用来"改 / 删"：把这两个动作放在菜单里，而不是往行上再加两个按钮 ——
-        // 一行的主动作只能有一个（这里是"完成"），其余的藏进长按是 iOS 的常规语言。
         .contextMenu {
             Button {
                 nav.push(.reminderEdit(reminder.id))
@@ -168,32 +171,37 @@ struct RemindersView: View {
                                 onAction: { showDone.toggle() })
                 if showDone {
                     ForEach(done) { reminder in
-                        Button {
-                            store.toggleReminder(id: reminder.id)
-                        } label: {
-                            DSListRow {
-                                DSIconTile(systemName: "checkmark",
-                                           tint: DS.icon,
-                                           background: DS.surfaceSoft)
-                                VStack(alignment: .leading, spacing: DS.Space.xxs) {
-                                    Text(reminder.title)
-                                        .font(DS.Typo.rowTitle)
-                                        .foregroundStyle(DS.inkTertiary)
-                                        .multilineTextAlignment(.leading)
-                                    Text(reminder.subtitle)
+                        SwipeableRow(onDelete: {
+                            store.deleteReminder(id: reminder.id)
+                            NotificationService.reschedule(reminders: store.data.reminders)
+                        }) {
+                            Button {
+                                store.toggleReminder(id: reminder.id)
+                            } label: {
+                                DSListRow {
+                                    DSIconTile(systemName: "checkmark",
+                                               tint: DS.icon,
+                                               background: DS.surfaceSoft)
+                                    VStack(alignment: .leading, spacing: DS.Space.xxs) {
+                                        Text(reminder.title)
+                                            .font(DS.Typo.rowTitle)
+                                            .foregroundStyle(DS.inkTertiary)
+                                            .multilineTextAlignment(.leading)
+                                        Text(reminder.subtitle)
+                                            .font(DS.Typo.caption)
+                                            .foregroundStyle(DS.inkFaint)
+                                            .multilineTextAlignment(.leading)
+                                    }
+                                    Spacer(minLength: 0)
+                                    Text(Formatters.monthDay.string(from: reminder.dueDate))
                                         .font(DS.Typo.caption)
                                         .foregroundStyle(DS.inkFaint)
-                                        .multilineTextAlignment(.leading)
                                 }
-                                Spacer(minLength: 0)
-                                Text(Formatters.monthDay.string(from: reminder.dueDate))
-                                    .font(DS.Typo.caption)
-                                    .foregroundStyle(DS.inkFaint)
                             }
+                            .buttonStyle(.plain)
                         }
-                        .buttonStyle(.plain)
                     }
-                    Text("点一下可以撤回「已完成」")
+                    Text("点一下撤回「已完成」· 左滑删除")
                         .font(.system(size: 11))
                         .foregroundStyle(DS.inkFaint)
                         .frame(maxWidth: .infinity, alignment: .leading)
