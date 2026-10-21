@@ -354,6 +354,21 @@ final class AppStore: ObservableObject {
         bills.reduce(0) { $0 + $1.amount }
     }
 
+    /// 支出合计（不含收入）
+    func expense(of bills: [Bill]) -> Double {
+        bills.filter { !$0.category.isIncome }.reduce(0) { $0 + $1.amount }
+    }
+
+    /// 收入合计（卖猫收入）
+    func income(of bills: [Bill]) -> Double {
+        bills.filter { $0.category.isIncome }.reduce(0) { $0 + $1.amount }
+    }
+
+    /// 净额 = 收入 - 支出（正数 = 赚了，负数 = 净支出）
+    func net(of bills: [Bill]) -> Double {
+        income(of: bills) - expense(of: bills)
+    }
+
     /// 分类占比（金额倒序）。**只返回有金额的分类**，避免列表里出现一堆 0。
     func breakdown(of bills: [Bill]) -> [(category: BillCategory, amount: Double)] {
         var bucket: [BillCategory: Double] = [:]

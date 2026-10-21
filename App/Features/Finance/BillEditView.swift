@@ -68,7 +68,7 @@ struct BillEditView: View {
 
     private var categoryCard: some View {
         DSCard {
-            DSSectionHeader(title: "花在哪")
+            DSSectionHeader(title: "类型")
             DSCategoryGrid(selection: $draft.category)
         }
     }

@@ -57,6 +57,7 @@ enum DS {
         static let breeding = Color(hex: 0xE39BC8)  // 配种费用（玫红）
         static let supplies = Color(hex: 0xD9B08C)  // 用品耗材（砂金）
         static let other = Color(hex: 0x9A8DA0)     // 其他
+        static let sale = Color(hex: 0x7BAE7F)      // 卖猫收入（绿 —— 唯一的进项色）
 
         // ⚠️ `vaccine` 是阶段二新增的第 6 档（画布上分类只画了 5 个）。
         // 取"青的浅一档"而不是新开一个色相，理由：疫苗驱虫与医疗健康是同一族
@@ -72,6 +73,7 @@ enum DS {
             case .breeding: return breeding
             case .supplies: return supplies
             case .other: return other
+            case .sale: return sale
             }
         }
     }

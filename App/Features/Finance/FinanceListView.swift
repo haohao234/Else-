@@ -67,10 +67,11 @@ struct FinanceListView: View {
             .padding(.bottom, DS.Space.m)
     }
 
-    /// 换月必须清掉选中日 —— 否则筛选停在"上个月的 8 号"，
+    /// 换月必须清掉选中日和折叠状态 —— 否则筛选停在"上个月的 8 号"，
     /// 而新月份里那天可能没有记录，用户会看到一张莫名其妙空着的明细。
     private func clearDaySelection() {
         selectedDay = nil
+        collapsedDays = []
     }
 
     @ViewBuilder
@@ -102,22 +103,46 @@ struct FinanceListView: View {
         }
     }
 
-    // MARK: ① 这个月花了多少
+    // MARK: ① 本月收支总览
 
     private var totalCard: some View {
-        VStack(alignment: .leading, spacing: DS.Space.m) {
-            Text(isCurrentMonth ? "本月累计支出" : "\(Formatters.monthTitle.string(from: month))支出")
+        let expenseTotal = store.expense(of: bills)
+        let incomeTotal = store.income(of: bills)
+        let netTotal = incomeTotal - expenseTotal
+
+        return VStack(alignment: .leading, spacing: DS.Space.m) {
+            // 净额大数字
+            Text(isCurrentMonth ? "本月净收支" : "\(Formatters.monthTitle.string(from: month))净收支")
                 .font(DS.Typo.caption)
                 .foregroundStyle(DS.inkTertiary)
             HStack(alignment: .firstTextBaseline, spacing: DS.Space.s) {
-                Text(Money.yuan(total))
+                Text(Money.netYuan(netTotal))
                     .font(DS.Typo.heroAmount)
-                    .foregroundStyle(DS.primary)
+                    .foregroundStyle(netTotal >= 0 ? DS.CategoryTint.sale : DS.primary)
                 Spacer(minLength: 0)
                 Text("共 \(bills.count) 笔")
                     .font(DS.Typo.caption)
                     .foregroundStyle(DS.inkTertiary)
             }
+
+            // 支出 / 收入 双行摘要
+            HStack(spacing: DS.Space.l) {
+                HStack(spacing: DS.Space.xxs) {
+                    Circle().fill(DS.primary).frame(width: 6, height: 6)
+                    Text("支出 " + Money.yuan(expenseTotal))
+                        .font(DS.Typo.caption)
+                        .foregroundStyle(DS.inkSecondary)
+                }
+                if incomeTotal > 0 {
+                    HStack(spacing: DS.Space.xxs) {
+                        Circle().fill(DS.CategoryTint.sale).frame(width: 6, height: 6)
+                        Text("收入 " + Money.yuan(incomeTotal))
+                            .font(DS.Typo.caption)
+                            .foregroundStyle(DS.inkSecondary)
+                    }
+                }
+            }
+
             DSBarChart(values: trend, height: 44)
             Text("近 7 个月趋势 · 最高 \(Money.yuan(trend.max() ?? 0))")
                 .font(DS.Typo.caption)
@@ -128,12 +153,16 @@ struct FinanceListView: View {
         .dsCardSurface(radius: DS.Radius.cardLarge)
     }
 
-    // MARK: ② 花在哪了
+    // MARK: ② 花在哪了 / 收入从哪来
 
     private var breakdownCard: some View {
-        DSCard {
+        let expenseItems = breakdown.filter { !$0.category.isIncome }
+        let incomeItems = breakdown.filter { $0.category.isIncome }
+        let expenseTotal = store.expense(of: bills)
+
+        return DSCard {
             DSSectionHeader(title: "分类占比")
-            ForEach(breakdown, id: \.category) { item in
+            ForEach(expenseItems, id: \.category) { item in
                 HStack(spacing: DS.Space.s) {
                     Circle()
                         .fill(DS.CategoryTint.color(for: item.category))
@@ -142,7 +171,7 @@ struct FinanceListView: View {
                         .font(DS.Typo.body)
                         .foregroundStyle(DS.inkSecondary)
                     Spacer(minLength: DS.Space.s)
-                    Text(percentText(item.amount))
+                    Text(percentText(item.amount, of: expenseTotal))
                         .font(DS.Typo.caption)
                         .foregroundStyle(DS.inkTertiary)
                     Text(Money.yuan(item.amount))
@@ -150,15 +179,36 @@ struct FinanceListView: View {
                         .foregroundStyle(DS.ink)
                 }
             }
+            // 收入单独一组，不参与支出占比
+            if !incomeItems.isEmpty {
+                Divider().padding(.vertical, DS.Space.xxs)
+                ForEach(incomeItems, id: \.category) { item in
+                    HStack(spacing: DS.Space.s) {
+                        Circle()
+                            .fill(DS.CategoryTint.color(for: item.category))
+                            .frame(width: 8, height: 8)
+                        Text(item.category.label)
+                            .font(DS.Typo.body)
+                            .foregroundStyle(DS.inkSecondary)
+                        Spacer(minLength: DS.Space.s)
+                        Text(Money.incomeYuan(item.amount))
+                            .font(DS.Typo.rowAmount)
+                            .foregroundStyle(DS.CategoryTint.sale)
+                    }
+                }
+            }
         }
     }
 
-    private func percentText(_ amount: Double) -> String {
+    private func percentText(_ amount: Double, of total: Double) -> String {
         guard total > 0 else { return "" }
         return String(format: "%.0f%%", amount / total * 100)
     }
 
-    // MARK: ③ 每一笔（按天分组，每天都带自己的小计）
+    // MARK: ③ 每一笔（按天分组，可折叠）
+
+    /// 记录哪些天是折叠状态。默认全部展开，点头部收起。
+    @State private var collapsedDays: Set<Int> = []
 
     private var listSection: some View {
         let groups = store.dailyGroups(in: month)
@@ -177,47 +227,80 @@ struct FinanceListView: View {
         }
     }
 
-    /// 一天一组：上面是「几号 · 几笔 · 小计」，下面才是那天的每笔账。
-    /// 这个"日小计行"就是用户要的「每日的记录情况」——
-    /// 它把"这一天花了多少"从"要自己把几行加起来"变成一眼可见。
+    /// 一天一组：头部可点击折叠/展开。
+    /// 数据多的时候收起不关心的天，只看关键日期 —— 不用滚一屏的列表。
     private func dayBlock(_ group: (day: Int, bills: [Bill], total: Double)) -> some View {
-        VStack(spacing: DS.Space.s) {
-            HStack(spacing: DS.Space.s) {
-                Text("\(group.day) 日")
-                    .font(.system(size: 12, weight: .semibold))
-                    .foregroundStyle(DS.inkSecondary)
-                Text("\(group.bills.count) 笔")
-                    .font(.system(size: 11))
-                    .foregroundStyle(DS.inkFaint)
-                Spacer(minLength: DS.Space.s)
-                Text(Money.yuan(group.total))
-                    .font(.system(size: 12, weight: .semibold, design: .monospaced))
-                    .foregroundStyle(DS.inkSecondary)
-            }
-            .padding(.horizontal, DS.Space.xxs)
+        let collapsed = collapsedDays.contains(group.day)
 
-            ForEach(group.bills) { bill in
-                NavigationLink(value: AppRoute.billEdit(bill.id)) {
-                    DSListRow {
-                        DSIconTile(systemName: bill.category.symbol,
-                                   tint: DS.CategoryTint.color(for: bill.category))
-                        VStack(alignment: .leading, spacing: DS.Space.xxs) {
-                            Text(bill.title)
-                                .font(DS.Typo.rowTitle)
-                                .foregroundStyle(DS.ink)
-                                .lineLimit(1)
-                            Text(catLine(bill))
-                                .font(DS.Typo.caption)
-                                .foregroundStyle(DS.inkTertiary)
-                                .lineLimit(1)
-                        }
-                        Spacer(minLength: DS.Space.s)
-                        Text(Money.signedYuan(bill.amount))
-                            .font(DS.Typo.rowAmount)
-                            .foregroundStyle(DS.ink)
+        return VStack(spacing: DS.Space.s) {
+            // 日小计行（可点击折叠）
+            Button {
+                withAnimation(.easeInOut(duration: 0.2)) {
+                    if collapsed {
+                        collapsedDays.remove(group.day)
+                    } else {
+                        collapsedDays.insert(group.day)
                     }
                 }
-                .buttonStyle(.plain)
+            } label: {
+                HStack(spacing: DS.Space.s) {
+                    Image(systemName: collapsed ? "chevron.right" : "chevron.down")
+                        .font(.system(size: 10, weight: .semibold))
+                        .foregroundStyle(DS.inkFaint)
+                    Text("\(group.day) 日")
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(DS.inkSecondary)
+                    Text("\(group.bills.count) 笔")
+                        .font(.system(size: 11))
+                        .foregroundStyle(DS.inkFaint)
+                    Spacer(minLength: DS.Space.s)
+                    // 收入/支出分行显示小计
+                    let dayExpense = group.bills.filter { !$0.category.isIncome }.reduce(0.0) { $0 + $1.amount }
+                    let dayIncome = group.bills.filter { $0.category.isIncome }.reduce(0.0) { $0 + $1.amount }
+                    if dayIncome > 0 {
+                        Text(Money.incomeYuan(dayIncome))
+                            .font(.system(size: 12, weight: .semibold, design: .monospaced))
+                            .foregroundStyle(DS.CategoryTint.sale)
+                    }
+                    Text(Money.signedYuan(dayExpense))
+                        .font(.system(size: 12, weight: .semibold, design: .monospaced))
+                        .foregroundStyle(DS.inkSecondary)
+                }
+                .padding(.horizontal, DS.Space.xxs)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+
+            if !collapsed {
+                ForEach(group.bills) { bill in
+                    NavigationLink(value: AppRoute.billEdit(bill.id)) {
+                        DSListRow {
+                            DSIconTile(systemName: bill.category.symbol,
+                                       tint: DS.CategoryTint.color(for: bill.category))
+                            VStack(alignment: .leading, spacing: DS.Space.xxs) {
+                                Text(bill.title)
+                                    .font(DS.Typo.rowTitle)
+                                    .foregroundStyle(DS.ink)
+                                    .lineLimit(1)
+                                Text(catLine(bill))
+                                    .font(DS.Typo.caption)
+                                    .foregroundStyle(DS.inkTertiary)
+                                    .lineLimit(1)
+                            }
+                            Spacer(minLength: DS.Space.s)
+                            if bill.category.isIncome {
+                                Text(Money.incomeYuan(bill.amount))
+                                    .font(DS.Typo.rowAmount)
+                                    .foregroundStyle(DS.CategoryTint.sale)
+                            } else {
+                                Text(Money.signedYuan(bill.amount))
+                                    .font(DS.Typo.rowAmount)
+                                    .foregroundStyle(DS.ink)
+                            }
+                        }
+                    }
+                    .buttonStyle(.plain)
+                }
             }
         }
     }

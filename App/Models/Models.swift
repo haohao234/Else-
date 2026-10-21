@@ -85,7 +85,7 @@ enum BreedingStage: String, Codable, CaseIterable, Identifiable {
 }
 
 enum BillCategory: String, Codable, CaseIterable, Identifiable {
-    case food, medical, vaccine, breeding, supplies, other
+    case food, medical, vaccine, breeding, supplies, other, sale
     var id: String { rawValue }
 
     var label: String {
@@ -96,8 +96,12 @@ enum BillCategory: String, Codable, CaseIterable, Identifiable {
         case .breeding: return "配种费用"
         case .supplies: return "用品耗材"
         case .other: return "其他支出"
+        case .sale: return "卖猫收入"
         }
     }
+
+    /// 是否为收入类目（卖猫收入是唯一进项）
+    var isIncome: Bool { self == .sale }
 
     /// SF Symbols 映射（画布上是手绘 SVG，这里是平台等价物）
     var symbol: String {
@@ -108,6 +112,7 @@ enum BillCategory: String, Codable, CaseIterable, Identifiable {
         case .breeding: return "heart"
         case .supplies: return "shippingbox"
         case .other: return "ellipsis"
+        case .sale: return "banknote"
         }
     }
 }
@@ -512,6 +517,14 @@ enum Money {
 
     /// -¥328（账单行）
     static func signedYuan(_ value: Double) -> String { "-¥" + plain(abs(value)) }
+
+    /// +¥5,000（收入行）
+    static func incomeYuan(_ value: Double) -> String { "+¥" + plain(abs(value)) }
+
+    /// 净额：正数显示 +¥xxx（赚了），负数显示 -¥xxx（花了）
+    static func netYuan(_ value: Double) -> String {
+        value >= 0 ? incomeYuan(value) : signedYuan(value)
+    }
 
     /// 日历格子里的那种金额：**不带 ¥、不带千分位、必要时才缩写**。
     ///
