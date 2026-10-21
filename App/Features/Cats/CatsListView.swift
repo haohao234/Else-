@@ -135,7 +135,7 @@ struct CatsListView: View {
                 }
             }
             .padding(.horizontal, DS.Space.screenH)
-            .padding(.bottom, DS.Space.xxl)
+            .padding(.bottom, 100)  // TabBar 高 ~94pt，留白避免遮挡
         }
     }
 

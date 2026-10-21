@@ -71,7 +71,7 @@ struct DSScreen<Content: View>: View {
             ScrollView {
                 VStack(spacing: DS.Space.l) { content }
                     .padding(.horizontal, DS.Space.screenH)
-                    .padding(.bottom, DS.Space.xxl * 2)
+                    .padding(.bottom, 100)  // TabBar 高 ~94pt，留白避免遮挡
             }
         }
         // 用自绘导航栏取代系统导航栏：设计稿的标题是**居中**的，
