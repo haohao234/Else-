@@ -17,6 +17,9 @@ struct FinanceListView: View {
     /// 在月历上选中的"几号"。选中后明细只显示那一天 ——
     /// 这就是"每日的记录情况"：从"看整月"下钻到"看某一天"，而不是再开一屏。
     @State private var selectedDay: Int?
+    /// 年月选择器
+    @State private var showMonthPicker = false
+    @State private var pickerDate = Date()
 
     private var calendar: Calendar { Calendar.current }
 
@@ -60,11 +63,77 @@ struct FinanceListView: View {
     }
 
     private var monthBar: some View {
-        DSMonthSwitcher(title: Formatters.monthTitle.string(from: month),
-                        onPrev: { monthOffset -= 1; clearDaySelection() },
-                        onNext: { if monthOffset < 0 { monthOffset += 1; clearDaySelection() } })
-            .padding(.horizontal, DS.Space.screenH)
-            .padding(.bottom, DS.Space.m)
+        HStack(spacing: DS.Space.m) {
+            DSIconButton(systemName: "chevron.left", size: 30) {
+                monthOffset -= 1; clearDaySelection()
+            }
+            Button {
+                pickerDate = month
+                showMonthPicker = true
+            } label: {
+                HStack(spacing: DS.Space.xxs) {
+                    Text(Formatters.monthTitle.string(from: month))
+                        .font(.system(size: 15, weight: .semibold))
+                        .foregroundStyle(DS.ink)
+                    Image(systemName: "chevron.down.circle")
+                        .font(.system(size: 12))
+                        .foregroundStyle(DS.inkTertiary)
+                }
+            }
+            .buttonStyle(.plain)
+            DSIconButton(systemName: "chevron.right", size: 30) {
+                if monthOffset < 0 { monthOffset += 1; clearDaySelection() }
+            }
+            .opacity(monthOffset < 0 ? 1 : 0.3)
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, DS.Space.screenH)
+        .padding(.bottom, DS.Space.m)
+        .sheet(isPresented: $showMonthPicker) {
+            monthPickerSheet
+        }
+    }
+
+    /// 年月选择弹窗：滚轮选年和月
+    private var monthPickerSheet: some View {
+        NavigationStack {
+            VStack(spacing: DS.Space.l) {
+                DatePicker("选择月份",
+                           selection: $pickerDate,
+                           displayedComponents: [.date])
+                    .datePickerStyle(.wheel)
+                    .labelsHidden()
+                    .environment(\.locale, Locale(identifier: "zh_CN"))
+
+                Button {
+                    let cal = Calendar.current
+                    let from = cal.dateComponents([.year, .month], from: Date())
+                    let to = cal.dateComponents([.year, .month], from: pickerDate)
+                    monthOffset = (to.year! - from.year!) * 12 + (to.month! - from.month!)
+                    clearDaySelection()
+                    showMonthPicker = false
+                } label: {
+                    Text("确定")
+                        .font(.system(size: 16, weight: .semibold))
+                        .foregroundStyle(.white)
+                        .frame(maxWidth: .infinity)
+                        .frame(height: 48)
+                        .background(DS.primaryGradient,
+                                    in: RoundedRectangle(cornerRadius: DS.Radius.input, style: .continuous))
+                }
+                .buttonStyle(.plain)
+                .padding(.horizontal, DS.Space.screenH)
+            }
+            .padding(.top, DS.Space.l)
+            .navigationTitle("选择月份")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("取消") { showMonthPicker = false }
+                }
+            }
+        }
+        .presentationDetents([.height(320)])
     }
 
     /// 换月必须清掉选中日和折叠状态 —— 否则筛选停在"上个月的 8 号"，

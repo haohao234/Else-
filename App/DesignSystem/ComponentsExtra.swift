@@ -612,22 +612,20 @@ struct DSCategoryGrid: View {
 
 /// 包装任意行内容，加左滑手势滑出删除按钮。
 ///
-/// 为什么不用 List 的 swipeActions：本项目的行都是自定义 DSListRow 放在 VStack 里，
-/// 不是 List 的 cell，所以系统 swipeActions 不可用。用 DragGesture 手写。
+/// 为什么不用 offset + ZStack：offset 只移动视觉，不改变热区，
+/// 内容仍然盖住删除按钮导致点不到。改用 HStack 布局，删除按钮占真实空间。
 ///
 /// 交互规则：
-///   · 左滑超过 60pt → 展开删除按钮
-///   · 左滑超过 140pt → 松手直接删除（带淡出动画）
-///   · 不到 60pt → 弹回原位
+///   · 左滑 >50pt → 展开删除按钮（内容缩窄，按钮占 60pt 真实宽度）
+///   · 展开后右滑 >30pt 或点内容 → 收回
+///   · 点删除按钮 → 内容滑出 + 执行删除
 struct SwipeableRow<Content: View>: View {
     let onDelete: () -> Void
     @ViewBuilder let content: Content
 
-    @State private var offset: CGFloat = 0
     @State private var showDelete = false
-
-    private let revealThreshold: CGFloat = -60
-    private let deleteThreshold: CGFloat = -140
+    @State private var dragOffset: CGFloat = 0
+    @State private var deleting = false
 
     init(onDelete: @escaping () -> Void, @ViewBuilder content: () -> Content) {
         self.onDelete = onDelete
@@ -635,16 +633,12 @@ struct SwipeableRow<Content: View>: View {
     }
 
     var body: some View {
-        ZStack(alignment: .trailing) {
-            // 删除按钮（底层，红色背景）
-            if showDelete || offset < -20 {
+        HStack(spacing: 0) {
+            content
+
+            if showDelete && !deleting {
                 Button {
-                    withAnimation(.easeOut(duration: 0.25)) {
-                        offset = -500  // 滑出屏幕
-                    }
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
-                        onDelete()
-                    }
+                    performDelete()
                 } label: {
                     Image(systemName: "trash.fill")
                         .font(.system(size: 16))
@@ -654,62 +648,66 @@ struct SwipeableRow<Content: View>: View {
                         .background(DS.alert)
                 }
                 .buttonStyle(.plain)
-                .transition(.opacity)
+                .transition(.move(edge: .trailing).combined(with: .opacity))
             }
-
-            // 主内容（上层，随手势偏移）
-            content
-                .offset(x: offset)
-                .simultaneousGesture(
-                    DragGesture(minimumDistance: 15)
-                        .onChanged { value in
-                            let w = value.translation.width
-                            let h = value.translation.height
-                            // 只响应以水平为主的拖拽（竖滑留给 ScrollView）
-                            guard abs(w) > abs(h) else { return }
-                            if w < 0 {
-                                offset = w
-                            } else if showDelete {
-                                // 已展开时右滑回去
-                                offset = revealThreshold + w
-                            }
-                        }
-                        .onEnded { value in
-                            let w = value.translation.width
-                            let h = value.translation.height
-                            guard abs(w) > abs(h) else {
-                                // 竖滑 → 弹回
-                                withAnimation(.spring(response: 0.3)) {
-                                    showDelete = false
-                                    offset = 0
-                                }
-                                return
-                            }
-                            if w < deleteThreshold {
-                                // 滑得够远 → 直接删除
-                                withAnimation(.easeOut(duration: 0.25)) {
-                                    offset = -500
-                                }
-                                DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
-                                    onDelete()
-                                }
-                            } else if w < revealThreshold {
-                                // 滑了一半 → 展开删除按钮
-                                withAnimation(.spring(response: 0.3)) {
-                                    showDelete = true
-                                    offset = revealThreshold
-                                }
-                            } else {
-                                // 没滑够 → 弹回
-                                withAnimation(.spring(response: 0.3)) {
-                                    showDelete = false
-                                    offset = 0
-                                }
-                            }
-                        }
-                )
         }
+        .offset(x: showDelete ? 0 : dragOffset)
         .clipped()
+        .simultaneousGesture(swipeGesture)
+        .onTapGesture {
+            // 展开状态下点内容 → 收回
+            if showDelete && !deleting {
+                withAnimation(.spring(response: 0.3)) {
+                    showDelete = false
+                    dragOffset = 0
+                }
+            }
+        }
+    }
+
+    private var swipeGesture: some Gesture {
+        DragGesture(minimumDistance: 15)
+            .onChanged { value in
+                guard !deleting else { return }
+                let w = value.translation.width
+                let h = value.translation.height
+                guard abs(w) > abs(h) else { return }
+                if !showDelete {
+                    dragOffset = min(0, w)
+                }
+            }
+            .onEnded { value in
+                guard !deleting else { return }
+                let w = value.translation.width
+                let h = value.translation.height
+                guard abs(w) > abs(h) else {
+                    withAnimation(.spring(response: 0.3)) { dragOffset = 0 }
+                    return
+                }
+
+                withAnimation(.spring(response: 0.3)) {
+                    if w < -50 && !showDelete {
+                        showDelete = true
+                        dragOffset = 0
+                    } else if w > 30 && showDelete {
+                        showDelete = false
+                        dragOffset = 0
+                    } else {
+                        dragOffset = 0
+                    }
+                }
+            }
+    }
+
+    private func performDelete() {
+        deleting = true
+        withAnimation(.easeOut(duration: 0.25)) {
+            showDelete = false
+            dragOffset = -500
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
+            onDelete()
+        }
     }
 }
 

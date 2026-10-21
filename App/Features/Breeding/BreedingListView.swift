@@ -297,13 +297,15 @@ struct ActiveRecordCard: View {
                     .foregroundStyle(DS.ink)
                     .lineLimit(1)
                 Spacer(minLength: DS.Space.s)
-                // 倒计时提醒开关：点一下开/关预产期通知
-                Button(action: onToggleReminder) {
-                    Image(systemName: hasReminder ? "bell.fill" : "bell.slash")
-                        .font(.system(size: 14))
-                        .foregroundStyle(hasReminder ? DS.primary : DS.inkFaint)
-                }
-                .buttonStyle(.plain)
+                // 倒计时提醒开关：highPriorityGesture 确保不被卡片导航抢走
+                Image(systemName: hasReminder ? "bell.fill" : "bell.slash")
+                    .font(.system(size: 14))
+                    .foregroundStyle(hasReminder ? DS.primary : DS.inkFaint)
+                    .frame(width: 28, height: 28)
+                    .contentShape(Rectangle())
+                    .highPriorityGesture(
+                        TapGesture().onEnded { _ in onToggleReminder() }
+                    )
                 DSStatusChip(text: record.stage.label, tone: record.stage.tone)
             }
 
