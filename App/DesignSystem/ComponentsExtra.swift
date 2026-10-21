@@ -660,10 +660,13 @@ struct SwipeableRow<Content: View>: View {
             // 主内容（上层，随手势偏移）
             content
                 .offset(x: offset)
-                .gesture(
-                    DragGesture(minimumDistance: 20)
+                .simultaneousGesture(
+                    DragGesture(minimumDistance: 15)
                         .onChanged { value in
                             let w = value.translation.width
+                            let h = value.translation.height
+                            // 只响应以水平为主的拖拽（竖滑留给 ScrollView）
+                            guard abs(w) > abs(h) else { return }
                             if w < 0 {
                                 offset = w
                             } else if showDelete {
@@ -673,6 +676,15 @@ struct SwipeableRow<Content: View>: View {
                         }
                         .onEnded { value in
                             let w = value.translation.width
+                            let h = value.translation.height
+                            guard abs(w) > abs(h) else {
+                                // 竖滑 → 弹回
+                                withAnimation(.spring(response: 0.3)) {
+                                    showDelete = false
+                                    offset = 0
+                                }
+                                return
+                            }
                             if w < deleteThreshold {
                                 // 滑得够远 → 直接删除
                                 withAnimation(.easeOut(duration: 0.25)) {

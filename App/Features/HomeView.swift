@@ -9,6 +9,8 @@ import SwiftUI
 struct HomeView: View {
     @EnvironmentObject private var store: AppStore
     @EnvironmentObject private var nav: AppNav
+    /// 日历上选中的日期（几号），选中后下方显示那天的待办
+    @State private var selectedReminderDay: Int?
 
     private var todayLine: String {
         let f = DateFormatter()
@@ -116,7 +118,7 @@ struct HomeView: View {
         }
     }
 
-    // MARK: 提醒日历 + 今日待办
+    // MARK: 提醒日历 + 待办
 
     private var remindersSection: some View {
         VStack(spacing: DS.Space.s) {
@@ -124,23 +126,31 @@ struct HomeView: View {
                             actionTitle: "全部 \(store.openReminders.count) 条",
                             onAction: { nav.homePath.append(.reminders) })
 
-            // 迷你日历：有提醒的日期标彩色圆点
+            // 迷你日历：有提醒的日期标彩色圆点，可点击
             reminderCalendar
 
-            // 今日待办（醒目突出）
-            if !todayReminders.isEmpty {
+            // 选中日期或今日的待办列表
+            let displayReminders = selectedReminders
+            if !displayReminders.isEmpty {
                 VStack(spacing: DS.Space.s) {
                     HStack(spacing: DS.Space.xxs) {
-                        Image(systemName: "exclamationmark.circle.fill")
+                        Image(systemName: selectedReminderDay != nil ? "calendar" : "exclamationmark.circle.fill")
                             .font(.system(size: 12))
-                            .foregroundStyle(DS.alert)
-                        Text("今天要做")
+                            .foregroundStyle(selectedReminderDay != nil ? DS.primary : DS.alert)
+                        Text(selectedReminderDay != nil
+                             ? "\(selectedReminderDay!) 日的待办"
+                             : "今天要做")
                             .font(DS.Typo.caption)
                             .fontWeight(.semibold)
-                            .foregroundStyle(DS.alert)
+                            .foregroundStyle(selectedReminderDay != nil ? DS.primary : DS.alert)
                         Spacer(minLength: 0)
+                        if selectedReminderDay != nil {
+                            Button("回到今天") { selectedReminderDay = nil }
+                                .font(.system(size: 11))
+                                .foregroundStyle(DS.primary)
+                        }
                     }
-                    ForEach(todayReminders) { reminder in
+                    ForEach(displayReminders) { reminder in
                         NavigationLink(value: AppRoute.reminders) {
                             DSListRow {
                                 let overdue = reminder.urgency == .overdue
@@ -170,6 +180,16 @@ struct HomeView: View {
                         .font(DS.Typo.caption)
                         .foregroundStyle(DS.inkTertiary)
                 }
+            } else if selectedReminderDay != nil {
+                DSCard {
+                    HStack(spacing: DS.Space.s) {
+                        Image(systemName: "checkmark.circle")
+                            .foregroundStyle(DS.CategoryTint.sale)
+                        Text("\(selectedReminderDay!) 日没有待办")
+                            .font(DS.Typo.caption)
+                            .foregroundStyle(DS.inkSecondary)
+                    }
+                }
             } else {
                 DSCard {
                     HStack(spacing: DS.Space.s) {
@@ -184,9 +204,16 @@ struct HomeView: View {
         }
     }
 
-    /// 今天的提醒（含逾期）
-    private var todayReminders: [Reminder] {
-        store.openReminders.filter { $0.urgency == .today || $0.urgency == .overdue }
+    /// 当前要显示的提醒：选中某天 → 那天的；没选 → 今天的（含逾期）
+    private var selectedReminders: [Reminder] {
+        let cal = Calendar.current
+        if let day = selectedReminderDay {
+            return store.openReminders.filter {
+                cal.component(.day, from: $0.dueDate) == day
+                && cal.isDate($0.dueDate, equalTo: Date(), toGranularity: .month)
+            }
+        }
+        return store.openReminders.filter { $0.urgency == .today || $0.urgency == .overdue }
     }
 
     /// 最近一个有待办的日期文案
@@ -198,7 +225,7 @@ struct HomeView: View {
         return "\(days) 天后"
     }
 
-    /// 迷你提醒日历：本月日历格子，有提醒的日期标圆点
+    /// 迷你提醒日历：本月日历格子，有提醒的日期标圆点，可点击查看
     private var reminderCalendar: some View {
         let cal = Calendar.current
         let month = Date()
@@ -223,21 +250,28 @@ struct HomeView: View {
                     ForEach(cells.indices, id: \.self) { i in
                         if let day = cells[i] {
                             let isToday = cal.isDateInToday(dateFor(day: day, in: month))
+                            let isSelected = selectedReminderDay == day
                             let hasReminder = reminderDays.contains(day)
-                            VStack(spacing: 1) {
-                                Text("\(day)")
-                                    .font(.system(size: 12, weight: isToday ? .bold : .regular))
-                                    .foregroundStyle(isToday ? .white : DS.ink)
-                                Circle()
-                                    .fill(hasReminder ? (isToday ? Color.white : DS.primary) : Color.clear)
-                                    .frame(width: 4, height: 4)
+                            Button {
+                                selectedReminderDay = isSelected ? nil : day
+                            } label: {
+                                VStack(spacing: 1) {
+                                    Text("\(day)")
+                                        .font(.system(size: 12, weight: isToday || isSelected ? .bold : .regular))
+                                        .foregroundStyle(isToday ? .white : (isSelected ? DS.primary : DS.ink))
+                                    Circle()
+                                        .fill(hasReminder ? (isToday ? Color.white : DS.primary) : Color.clear)
+                                        .frame(width: 4, height: 4)
+                                }
+                                .frame(maxWidth: .infinity)
+                                .frame(height: 32)
+                                .background(
+                                    isToday ? DS.primary
+                                             : (isSelected ? DS.primary.opacity(0.12) : Color.clear),
+                                    in: RoundedRectangle(cornerRadius: 8, style: .continuous)
+                                )
                             }
-                            .frame(maxWidth: .infinity)
-                            .frame(height: 32)
-                            .background(
-                                isToday ? DS.primary : Color.clear,
-                                in: RoundedRectangle(cornerRadius: 8, style: .continuous)
-                            )
+                            .buttonStyle(.plain)
                         } else {
                             Color.clear.frame(height: 32)
                         }

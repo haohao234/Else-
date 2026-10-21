@@ -10,6 +10,7 @@ import SwiftUI
 
 struct BreedingListView: View {
     @EnvironmentObject private var store: AppStore
+    @EnvironmentObject private var nav: AppNav
     @State private var filter: FilterOption = .all
     @State private var birthSheetRecord: BreedingRecord?
 
@@ -134,24 +135,22 @@ struct BreedingListView: View {
             VStack(spacing: DS.Space.m) {
                 ForEach(filtered) { record in
                     if record.stage == .mated || record.stage == .pregnant {
-                        NavigationLink(value: AppRoute.breedingDetail(record.id)) {
-                            ActiveRecordCard(
-                                record: record,
-                                hasReminder: hasDueReminder(record),
-                                onQuickBirth: { birthSheetRecord = record },
-                                onQuickPregnant: { confirmPregnant(record) },
-                                onToggleReminder: { toggleDueReminder(record) }
-                            )
-                        }
-                        .buttonStyle(.plain)
+                        ActiveRecordCard(
+                            record: record,
+                            hasReminder: hasDueReminder(record),
+                            onQuickBirth: { birthSheetRecord = record },
+                            onQuickPregnant: { confirmPregnant(record) },
+                            onToggleReminder: { toggleDueReminder(record) }
+                        )
+                        .contentShape(Rectangle())
+                        .onTapGesture { nav.push(.breedingDetail(record.id)) }
                     } else {
-                        NavigationLink(value: AppRoute.breedingDetail(record.id)) {
-                            CompletedRecordCard(
-                                record: record,
-                                onQuickWeaned: { confirmWeaned(record) }
-                            )
-                        }
-                        .buttonStyle(.plain)
+                        CompletedRecordCard(
+                            record: record,
+                            onQuickWeaned: { confirmWeaned(record) }
+                        )
+                        .contentShape(Rectangle())
+                        .onTapGesture { nav.push(.breedingDetail(record.id)) }
                     }
                 }
             }
