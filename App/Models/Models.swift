@@ -96,11 +96,11 @@ enum BillCategory: String, Codable, CaseIterable, Identifiable {
         case .breeding: return "配种费用"
         case .supplies: return "用品耗材"
         case .other: return "其他支出"
-        case .sale: return "卖猫收入"
+        case .sale: return "收入"
         }
     }
 
-    /// 是否为收入类目（卖猫收入是唯一进项）
+    /// 是否为收入类目
     var isIncome: Bool { self == .sale }
 
     /// SF Symbols 映射（画布上是手绘 SVG，这里是平台等价物）
