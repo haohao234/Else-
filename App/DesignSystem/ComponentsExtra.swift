@@ -612,11 +612,14 @@ struct DSCategoryGrid: View {
 
 /// 包装任意行内容，加左滑手势滑出删除按钮。
 ///
-/// 为什么不用 offset + ZStack：offset 只移动视觉，不改变热区，
-/// 内容仍然盖住删除按钮导致点不到。改用 HStack 布局，删除按钮占真实空间。
+/// ⚠️ 两个必须遵守的约束（都踩过坑）：
+///   1. 手势/点击**只能加在内容上**，绝不能加在整个 HStack 上 ——
+///      父级的 onTapGesture 会把删除按钮的点击吃掉，表现是"滑得出来但点不动"。
+///   2. 删除按钮要用**真实布局宽度**（HStack 里的 60pt），不要用 ZStack + offset，
+///      offset 只移视觉、不移热区，同样会点不到。
 ///
 /// 交互规则：
-///   · 左滑 >50pt → 展开删除按钮（内容缩窄，按钮占 60pt 真实宽度）
+///   · 左滑 >50pt → 展开删除按钮（内容缩窄，按钮占 60pt）
 ///   · 展开后右滑 >30pt 或点内容 → 收回
 ///   · 点删除按钮 → 内容滑出 + 执行删除
 struct SwipeableRow<Content: View>: View {
@@ -634,8 +637,26 @@ struct SwipeableRow<Content: View>: View {
 
     var body: some View {
         HStack(spacing: 0) {
-            content
+            // 内容区：手势只加在这里
+            ZStack {
+                content
 
+                // 展开状态下盖一层透明层接管点击 → 点内容收回（不触发内容里的按钮）
+                if showDelete && !deleting {
+                    Color.clear
+                        .contentShape(Rectangle())
+                        .onTapGesture {
+                            withAnimation(.spring(response: 0.3)) {
+                                showDelete = false
+                                dragOffset = 0
+                            }
+                        }
+                }
+            }
+            .offset(x: showDelete ? 0 : dragOffset)
+            .simultaneousGesture(swipeGesture)
+
+            // 删除按钮：真实布局宽度，独立响应点击
             if showDelete && !deleting {
                 Button {
                     performDelete()
@@ -646,21 +667,23 @@ struct SwipeableRow<Content: View>: View {
                         .frame(width: 60)
                         .frame(maxHeight: .infinity)
                         .background(DS.alert)
+                        .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
                 .transition(.move(edge: .trailing).combined(with: .opacity))
             }
         }
-        .offset(x: showDelete ? 0 : dragOffset)
         .clipped()
-        .simultaneousGesture(swipeGesture)
-        .onTapGesture {
-            // 展开状态下点内容 → 收回
-            if showDelete && !deleting {
-                withAnimation(.spring(response: 0.3)) {
-                    showDelete = false
-                    dragOffset = 0
-                }
+        // 拖拽过程中右侧先透出红色，给"松手会出删除"的预期
+        .overlay(alignment: .trailing) {
+            if !showDelete && !deleting && dragOffset < -8 {
+                Image(systemName: "trash.fill")
+                    .font(.system(size: 15))
+                    .foregroundStyle(.white)
+                    .frame(width: 56, height: 44)
+                    .background(DS.alert, in: RoundedRectangle(cornerRadius: DS.Radius.row, style: .continuous))
+                    .padding(.trailing, 2)
+                    .allowsHitTesting(false)
             }
         }
     }

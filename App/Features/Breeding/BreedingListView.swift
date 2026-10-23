@@ -211,6 +211,16 @@ struct BreedingListView: View {
         store.upsert(breeding: r)
     }
 
+    /// 判断某条提醒是不是这条繁育记录的预产期提醒。
+    /// ⚠️ 不能只看 detail —— 创建时 detail 写的是「预计 X 生产…」，不含"预产期"三个字，
+    /// 只看 detail 会永远匹配不上（曾经踩过：点铃铛建了提醒，但图标不变，每点一次多一条）。
+    /// 所以 title 和 detail 都查。
+    private func isDueReminderOf(_ reminder: Reminder, record: BreedingRecord) -> Bool {
+        reminder.kind == .dueDate
+            && reminder.catID == record.motherID
+            && (reminder.title.contains("预产期") || reminder.detail.contains("预产期"))
+    }
+
     /// 确认生产：设置生产日期 + 产仔数，并清理预产期提醒
     private func confirmBirth(_ record: BreedingRecord, date: Date, kittenCount: Int?) {
         var r = record
@@ -218,11 +228,10 @@ struct BreedingListView: View {
         r.kittenCount = kittenCount
         store.upsert(breeding: r)
         // 清理预产期提醒（已生产，不再需要）
-        if let rem = store.data.reminders.first(where: {
-            $0.kind == .dueDate && $0.catID == record.motherID && $0.detail.contains("预产期")
-        }) {
+        for rem in store.data.reminders where isDueReminderOf(rem, record: record) {
             store.deleteReminder(id: rem.id)
         }
+        NotificationService.reschedule(reminders: store.data.reminders)
     }
 
     /// 确认出窝：设置出窝日期为今天
@@ -234,10 +243,7 @@ struct BreedingListView: View {
 
     /// 开关预产期提醒：有就删，没有就建
     private func toggleDueReminder(_ record: BreedingRecord) {
-        let existing = store.data.reminders.first { r in
-            r.kind == .dueDate && r.catID == record.motherID && r.detail.contains("预产期")
-        }
-        if let ex = existing {
+        if let ex = store.data.reminders.first(where: { isDueReminderOf($0, record: record) }) {
             store.deleteReminder(id: ex.id)
         } else if let dueDate = record.expectedDueDate {
             let cal = Calendar.current
@@ -245,18 +251,18 @@ struct BreedingListView: View {
             let motherName = record.motherName
             let rem = Reminder(kind: .dueDate,
                                title: "\(motherName) · 预产期",
-                               detail: "预计 \(Formatters.monthDay.string(from: dueDate)) 生产，请提前准备产房与保温箱",
+                               detail: "预产期 \(Formatters.monthDay.string(from: dueDate))，请提前准备产房与保温箱",
                                dueDate: reminderTime,
                                catID: record.motherID)
             store.upsert(reminder: rem)
         }
+        // 同步本地通知（否则铃铛开了、列表里有，但手机不会响）
+        NotificationService.reschedule(reminders: store.data.reminders)
     }
 
     /// 某条繁育记录是否有预产期提醒
     private func hasDueReminder(_ record: BreedingRecord) -> Bool {
-        store.data.reminders.contains { r in
-            r.kind == .dueDate && r.catID == record.motherID && r.detail.contains("预产期") && !r.isDone
-        }
+        store.data.reminders.contains { isDueReminderOf($0, record: record) && !$0.isDone }
     }
 }
 
