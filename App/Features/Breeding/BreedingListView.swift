@@ -303,15 +303,6 @@ struct ActiveRecordCard: View {
                     .foregroundStyle(DS.ink)
                     .lineLimit(1)
                 Spacer(minLength: DS.Space.s)
-                // 倒计时提醒开关：highPriorityGesture 确保不被卡片导航抢走
-                Image(systemName: hasReminder ? "bell.fill" : "bell.slash")
-                    .font(.system(size: 14))
-                    .foregroundStyle(hasReminder ? DS.primary : DS.inkFaint)
-                    .frame(width: 28, height: 28)
-                    .contentShape(Rectangle())
-                    .highPriorityGesture(
-                        TapGesture().onEnded { _ in onToggleReminder() }
-                    )
                 DSStatusChip(text: record.stage.label, tone: record.stage.tone)
             }
 
@@ -355,6 +346,38 @@ struct ActiveRecordCard: View {
                         .font(DS.Typo.caption)
                         .foregroundStyle(DS.primary)
                 }
+            }
+
+            // 预产期提醒开关：整行可点，状态一目了然
+            if record.expectedDueDate != nil {
+                Button(action: onToggleReminder) {
+                    HStack(spacing: DS.Space.s) {
+                        Image(systemName: hasReminder ? "bell.fill" : "bell.slash")
+                            .font(.system(size: 14, weight: .medium))
+                            .foregroundStyle(hasReminder ? DS.primary : DS.inkTertiary)
+                        Text("预产期提醒")
+                            .font(.system(size: 13, weight: hasReminder ? .semibold : .regular))
+                            .foregroundStyle(hasReminder ? DS.ink : DS.inkSecondary)
+                        Spacer(minLength: DS.Space.s)
+                        Text(hasReminder ? "已开启" : "已关闭")
+                            .font(.system(size: 11, weight: .semibold))
+                            .foregroundStyle(hasReminder ? .white : DS.inkTertiary)
+                            .padding(.horizontal, DS.Space.m)
+                            .frame(height: 24)
+                            .background(
+                                hasReminder ? AnyShapeStyle(DS.primary) : AnyShapeStyle(DS.input),
+                                in: Capsule()
+                            )
+                    }
+                    .padding(.horizontal, DS.Space.m)
+                    .frame(height: 42)
+                    .background(
+                        DS.input.opacity(0.55),
+                        in: RoundedRectangle(cornerRadius: DS.Radius.iconButton, style: .continuous)
+                    )
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
             }
 
             // 快捷操作按钮
