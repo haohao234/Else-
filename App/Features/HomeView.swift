@@ -11,6 +11,10 @@ struct HomeView: View {
     @EnvironmentObject private var nav: AppNav
     /// 日历上选中的日期（几号），选中后下方显示那天的待办
     @State private var selectedReminderDay: Int?
+    /// 提醒日历当前显示的月份
+    @State private var calendarMonth = Date()
+    @State private var showCalendarMonthPicker = false
+    @State private var calendarPickerDate = Date()
 
     private var todayLine: String {
         let f = DateFormatter()
@@ -134,18 +138,16 @@ struct HomeView: View {
             if !displayReminders.isEmpty {
                 VStack(spacing: DS.Space.s) {
                     HStack(spacing: DS.Space.xxs) {
-                        Image(systemName: selectedReminderDay != nil ? "calendar" : "exclamationmark.circle.fill")
+                        Image(systemName: isTodayList ? "exclamationmark.circle.fill" : "calendar")
                             .font(.system(size: 12))
-                            .foregroundStyle(selectedReminderDay != nil ? DS.primary : DS.alert)
-                        Text(selectedReminderDay != nil
-                             ? "\(selectedReminderDay!) 日的待办"
-                             : "今天要做")
+                            .foregroundStyle(isTodayList ? DS.alert : DS.primary)
+                        Text(reminderListTitle)
                             .font(DS.Typo.caption)
                             .fontWeight(.semibold)
-                            .foregroundStyle(selectedReminderDay != nil ? DS.primary : DS.alert)
+                            .foregroundStyle(isTodayList ? DS.alert : DS.primary)
                         Spacer(minLength: 0)
                         if selectedReminderDay != nil {
-                            Button("回到今天") { selectedReminderDay = nil }
+                            Button("取消选中") { selectedReminderDay = nil }
                                 .font(.system(size: 11))
                                 .foregroundStyle(DS.primary)
                         }
@@ -180,12 +182,22 @@ struct HomeView: View {
                         .font(DS.Typo.caption)
                         .foregroundStyle(DS.inkTertiary)
                 }
-            } else if selectedReminderDay != nil {
+            } else if let day = selectedReminderDay {
                 DSCard {
                     HStack(spacing: DS.Space.s) {
                         Image(systemName: "checkmark.circle")
                             .foregroundStyle(DS.CategoryTint.sale)
-                        Text("\(selectedReminderDay!) 日没有待办")
+                        Text("\(day) 日没有待办")
+                            .font(DS.Typo.caption)
+                            .foregroundStyle(DS.inkSecondary)
+                    }
+                }
+            } else if !isViewingCurrentMonth {
+                DSCard {
+                    HStack(spacing: DS.Space.s) {
+                        Image(systemName: "checkmark.circle")
+                            .foregroundStyle(DS.CategoryTint.sale)
+                        Text("这个月没有待办")
                             .font(DS.Typo.caption)
                             .foregroundStyle(DS.inkSecondary)
                     }
@@ -204,16 +216,42 @@ struct HomeView: View {
         }
     }
 
-    /// 当前要显示的提醒：选中某天 → 那天的；没选 → 今天的（含逾期）
+    /// 日历是否停在当前月
+    private var isViewingCurrentMonth: Bool {
+        Calendar.current.isDate(calendarMonth, equalTo: Date(), toGranularity: .month)
+    }
+
+    /// 下方列表是不是"今天要做"（红色警示态）
+    private var isTodayList: Bool {
+        selectedReminderDay == nil && isViewingCurrentMonth
+    }
+
+    /// 下方列表标题
+    private var reminderListTitle: String {
+        if let day = selectedReminderDay { return "\(day) 日的待办" }
+        if isViewingCurrentMonth { return "今天要做" }
+        let m = Calendar.current.component(.month, from: calendarMonth)
+        return "\(m) 月待办"
+    }
+
+    /// 当前要显示的提醒：
+    /// · 选中某天 → 那天的
+    /// · 当前月未选中 → 今天（含逾期）
+    /// · 其它月未选中 → 该月全部未完成
     private var selectedReminders: [Reminder] {
         let cal = Calendar.current
         if let day = selectedReminderDay {
             return store.openReminders.filter {
                 cal.component(.day, from: $0.dueDate) == day
-                && cal.isDate($0.dueDate, equalTo: Date(), toGranularity: .month)
+                && cal.isDate($0.dueDate, equalTo: calendarMonth, toGranularity: .month)
             }
         }
-        return store.openReminders.filter { $0.urgency == .today || $0.urgency == .overdue }
+        if isViewingCurrentMonth {
+            return store.openReminders.filter { $0.urgency == .today || $0.urgency == .overdue }
+        }
+        return store.openReminders.filter {
+            cal.isDate($0.dueDate, equalTo: calendarMonth, toGranularity: .month)
+        }
     }
 
     /// 最近一个有待办的日期文案
@@ -225,14 +263,66 @@ struct HomeView: View {
         return "\(days) 天后"
     }
 
-    /// 迷你提醒日历：本月日历格子，有提醒的日期标圆点，可点击查看
+    /// 迷你提醒日历：可切月份，有提醒的日期标圆点，可点击查看
     private var reminderCalendar: some View {
         let cal = Calendar.current
-        let month = Date()
+        let month = calendarMonth
         let reminderDays = daysWithReminders(in: month)
 
         return DSCard {
             VStack(spacing: DS.Space.xs) {
+                // 月份切换条
+                HStack(spacing: DS.Space.xs) {
+                    Button {
+                        calendarMonth = cal.date(byAdding: .month, value: -1, to: calendarMonth) ?? calendarMonth
+                        selectedReminderDay = nil
+                    } label: {
+                        Image(systemName: "chevron.left")
+                            .font(.system(size: 11, weight: .semibold))
+                            .foregroundStyle(DS.inkSecondary)
+                            .frame(width: 26, height: 26)
+                    }
+                    .buttonStyle(.plain)
+
+                    Button {
+                        calendarPickerDate = calendarMonth
+                        showCalendarMonthPicker = true
+                    } label: {
+                        HStack(spacing: DS.Space.xxs) {
+                            Text(Formatters.monthTitle.string(from: calendarMonth))
+                                .font(.system(size: 13, weight: .semibold))
+                                .foregroundStyle(DS.ink)
+                            Image(systemName: "chevron.down.circle")
+                                .font(.system(size: 11))
+                                .foregroundStyle(DS.inkTertiary)
+                        }
+                    }
+                    .buttonStyle(.plain)
+
+                    Button {
+                        calendarMonth = cal.date(byAdding: .month, value: 1, to: calendarMonth) ?? calendarMonth
+                        selectedReminderDay = nil
+                    } label: {
+                        Image(systemName: "chevron.right")
+                            .font(.system(size: 11, weight: .semibold))
+                            .foregroundStyle(DS.inkSecondary)
+                            .frame(width: 26, height: 26)
+                    }
+                    .buttonStyle(.plain)
+
+                    Spacer(minLength: 0)
+
+                    if !cal.isDate(calendarMonth, equalTo: Date(), toGranularity: .month) {
+                        Button("回到本月") {
+                            calendarMonth = Date()
+                            selectedReminderDay = nil
+                        }
+                        .font(.system(size: 11))
+                        .foregroundStyle(DS.primary)
+                    }
+                }
+                .padding(.bottom, DS.Space.xxs)
+
                 // 星期头
                 let symbols = ["一", "二", "三", "四", "五", "六", "日"]
                 HStack(spacing: 0) {
@@ -279,6 +369,48 @@ struct HomeView: View {
                 }
             }
         }
+        .sheet(isPresented: $showCalendarMonthPicker) {
+            calendarMonthPickerSheet
+        }
+    }
+
+    /// 年月选择弹窗（首页日历用）
+    private var calendarMonthPickerSheet: some View {
+        NavigationStack {
+            VStack(spacing: DS.Space.l) {
+                DatePicker("选择月份",
+                           selection: $calendarPickerDate,
+                           displayedComponents: [.date])
+                    .datePickerStyle(.wheel)
+                    .labelsHidden()
+                    .environment(\.locale, Locale(identifier: "zh_CN"))
+
+                Button {
+                    calendarMonth = calendarPickerDate
+                    selectedReminderDay = nil
+                    showCalendarMonthPicker = false
+                } label: {
+                    Text("确定")
+                        .font(.system(size: 16, weight: .semibold))
+                        .foregroundStyle(.white)
+                        .frame(maxWidth: .infinity)
+                        .frame(height: 48)
+                        .background(DS.primaryGradient,
+                                    in: RoundedRectangle(cornerRadius: DS.Radius.input, style: .continuous))
+                }
+                .buttonStyle(.plain)
+                .padding(.horizontal, DS.Space.screenH)
+            }
+            .padding(.top, DS.Space.l)
+            .navigationTitle("选择月份")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("取消") { showCalendarMonthPicker = false }
+                }
+            }
+        }
+        .presentationDetents([.height(320)])
     }
 
     /// 本月有提醒的日期集合
