@@ -186,12 +186,160 @@ enum BackupService {
         return try decoder.decode(AppData.self, from: data)
     }
 
-    /// 备份文件的"一句话摘要"，用于恢复列表里让人认得出是哪一份。
-    static func summary(of url: URL) -> String {
-        guard let data = try? Data(contentsOf: url), let appData = try? decode(data) else {
-            return "无法读取"
+    // MARK: 诊断与抢救
+    //
+    // 为什么需要这一组：原来的导入失败只说一句「文件已损坏」，把三种完全不同的情况
+    // 糊成一句 —— ① 0 字节 ② 根本不是 JSON ③ JSON 对但某条记录字段不匹配。
+    // 用户因此无法判断"还有没有救"，我们也拿不到任何线索。
+    // 这里把判断拆开，并在 ③ 时尽量把能解的那部分捞出来。
+
+    /// 抢救结果统计
+    struct SalvageReport {
+        var keptCats = 0, keptBreedings = 0, keptBills = 0, keptReminders = 0, keptHealth = 0
+        var droppedCats = 0, droppedBreedings = 0, droppedBills = 0, droppedReminders = 0, droppedHealth = 0
+
+        var keptTotal: Int { keptCats + keptBreedings + keptBills + keptReminders + keptHealth }
+        var droppedTotal: Int { droppedCats + droppedBreedings + droppedBills + droppedReminders + droppedHealth }
+
+        /// 「3 只猫 · 12 笔账 · 丢了 2 条」
+        var summary: String {
+            var parts: [String] = []
+            if keptCats > 0 { parts.append("\(keptCats) 只猫") }
+            if keptBreedings > 0 { parts.append("\(keptBreedings) 条繁育") }
+            if keptBills > 0 { parts.append("\(keptBills) 笔账") }
+            if keptReminders > 0 { parts.append("\(keptReminders) 条提醒") }
+            if keptHealth > 0 { parts.append("\(keptHealth) 条健康记录") }
+            let kept = parts.isEmpty ? "什么都没捞到" : parts.joined(separator: " · ")
+            if droppedTotal > 0 { return kept + "（另有 \(droppedTotal) 条结构损坏，已跳过）" }
+            return kept
         }
-        return "\(appData.cats.count) 只猫 · \(appData.breedings.count) 条繁育 · \(appData.bills.count) 笔账"
+    }
+
+    /// 一句话诊断：**先告诉用户文件到底是什么状态**，再谈能不能救。
+    static func diagnose(_ data: Data) -> String {
+        if data.isEmpty { return "文件是空的（0 字节）—— 可能是上传/同步没完成，或者选错了文件。" }
+
+        let json: Any
+        do {
+            json = try JSONSerialization.jsonObject(with: data)
+        } catch {
+            let head = String(data: data.prefix(24), encoding: .utf8) ?? ""
+            let looksText = !head.isEmpty && head.unicodeScalars.allSatisfy { $0.isASCII || $0.properties.isAlphabetic }
+            if looksText {
+                return "文件不是 JSON 格式（开头是「\(head.prefix(20))…」）—— 可能选成了 CSV 或别的文件。"
+            }
+            return "文件不是 JSON 格式，可能是别的 App 的文件，或者内容被损坏了。"
+        }
+
+        guard let dict = json as? [String: Any] else {
+            return "文件是 JSON，但顶层不是一个对象 —— 不是本 App 的备份。"
+        }
+
+        let known: Set<String> = ["cats", "breedings", "bills", "reminders", "healthRecords", "schemaVersion"]
+        let hit = Set(dict.keys).intersection(known)
+        if hit.isEmpty {
+            return "JSON 里没有任何本 App 的字段（cats / breedings / bills …）—— 不是本 App 的备份。"
+        }
+
+        // 结构对，但严格解码失败：说清是哪一类字段出的问题
+        do {
+            _ = try decode(data)
+            return "严格校验通过。"
+        } catch {
+            return "结构是本 App 的，但严格校验没通过：\(describe(error))"
+        }
+    }
+
+    /// 把 DecodingError 翻成一句能看懂的话
+    static func describe(_ error: Error) -> String {
+        guard let e = error as? DecodingError else { return error.localizedDescription }
+        func path(_ ctx: DecodingError.Context) -> String {
+            let p = ctx.codingPath.map { key -> String in
+                if let i = key.intValue { return "[\(i)]" }
+                return key.stringValue
+            }.joined(separator: ".")
+            return p.isEmpty ? "（根）" : p
+        }
+        switch e {
+        case .keyNotFound(let key, let ctx):
+            return "缺少字段「\(key.stringValue)」（位置：\(path(ctx))）"
+        case .typeMismatch(_, let ctx):
+            return "字段类型不对（位置：\(path(ctx))）"
+        case .valueNotFound(_, let ctx):
+            return "字段是空的（位置：\(path(ctx))）"
+        case .dataCorrupted(let ctx):
+            return "内容不合法（位置：\(path(ctx))）：\(ctx.debugDescription)"
+        @unknown default:
+            return "未知解码错误"
+        }
+    }
+
+    /// 尽力抢救：顶层按 key 取数组，**逐个元素解码，坏的那条跳过**。
+    ///
+    /// 适用场景：某一条记录字段被改坏/缺失，导致整份文件解不出来 ——
+    /// 严格模式下"一条坏 → 全盘失败"，而用户真正想要的是"先把我能拿的拿回来"。
+    /// 返回 nil 只代表**连 JSON 都不是**，那种情况确实无解。
+    static func salvage(_ data: Data) -> (data: AppData, report: SalvageReport)? {
+        guard let root = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] else {
+            return nil
+        }
+
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+
+        func pick<T: Decodable>(_ key: String, _ type: T.Type) -> (kept: [T], dropped: Int) {
+            guard let raw = root[key] as? [Any] else { return ([], 0) }
+            var kept: [T] = []
+            var dropped = 0
+            for item in raw {
+                guard let itemData = try? JSONSerialization.data(withJSONObject: item),
+                      let value = try? decoder.decode(T.self, from: itemData) else {
+                    dropped += 1
+                    continue
+                }
+                kept.append(value)
+            }
+            return (kept, dropped)
+        }
+
+        let cats = pick("cats", Cat.self)
+        let breedings = pick("breedings", BreedingRecord.self)
+        let bills = pick("bills", Bill.self)
+        let reminders = pick("reminders", Reminder.self)
+        let health = pick("healthRecords", HealthRecord.self)
+
+        var report = SalvageReport()
+        report.keptCats = cats.kept.count
+        report.droppedCats = cats.dropped
+        report.keptBreedings = breedings.kept.count
+        report.droppedBreedings = breedings.dropped
+        report.keptBills = bills.kept.count
+        report.droppedBills = bills.dropped
+        report.keptReminders = reminders.kept.count
+        report.droppedReminders = reminders.dropped
+        report.keptHealth = health.kept.count
+        report.droppedHealth = health.dropped
+
+        let appData = AppData(cats: cats.kept,
+                              breedings: breedings.kept,
+                              bills: bills.kept,
+                              reminders: reminders.kept,
+                              healthRecords: health.kept)
+        return (appData, report)
+    }
+
+    /// 备份文件的"一句话摘要"，用于恢复列表里让人认得出是哪一份。
+    /// 严格解不动时再看能不能抢救 —— 列表里**提前标出来**，
+    /// 用户就不必逐个点开试，也不会误以为这份已经废了。
+    static func summary(of url: URL) -> String {
+        guard let data = try? Data(contentsOf: url) else { return "无法读取" }
+        if let appData = try? decode(data) {
+            return "\(appData.cats.count) 只猫 · \(appData.breedings.count) 条繁育 · \(appData.bills.count) 笔账"
+        }
+        if let (_, report) = salvage(data), report.keptTotal > 0 {
+            return "校验未通过 · 可抢救：\(report.summary)"
+        }
+        return "无法读取（\(diagnose(data))）"
     }
 
     /// 通用文件大小文案（两个入口共用同一套换算 —— 分两份写必然会出现两套阈值）

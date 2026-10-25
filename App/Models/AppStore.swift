@@ -86,6 +86,14 @@ final class AppStore: ObservableObject {
     /// 对一个把「数据只在本机、你自己能管」当承诺的 App，静默覆盖是最不该有的失败方式。
     @Published private(set) var loadProblem: String?
 
+    /// 留档失败时置为 true —— **此时禁止任何写入**。
+    ///
+    /// 为什么必须有这个闸门：正常情况下读失败会把原文件改名留档，于是新写入不会碰到它。
+    /// 但如果留档本身失败（磁盘满、权限异常），原文件还躺在 `store.json` 上；
+    /// 这时只要用户随便点一下（完成一条提醒、改一只猫），`save()` 就会用空数据
+    /// **把它彻底覆盖** —— 从"可恢复"变成"真的没了"。
+    @Published private(set) var saveBlocked = false
+
     /// 读失败时被**留档**的文件名（在「文件」App → Elese的猫舍 → Elese备份 里能找到）
     @Published private(set) var quarantinedFileName: String?
 
@@ -114,10 +122,16 @@ final class AppStore: ObservableObject {
             switch AppStore.read(from: storeFileURL) {
             case .success(let loaded):
                 data = loaded
+                // 读成功了 → 立刻留一份"当天快照"，最多留 7 份。
+                // 这不是锦上添花：用户这次遇到的就是"更新后读不出来，且没有更早的备份"。
+                // 只要昨天成功启动过一次，今天出问题就还有一份可恢复的。
+                writeDailySnapshot()
             case .failure(let reason):
                 data = AppData()
                 loadProblem = reason.message
                 quarantinedFileName = AppStore.quarantine(storeFileURL)
+                // 留档没成功 → 原文件仍在原处，禁止写入，否则第一次 save() 就把它覆盖了
+                saveBlocked = (quarantinedFileName == nil)
             }
         } else {
             data = AppData.sample
@@ -187,6 +201,8 @@ final class AppStore: ObservableObject {
 
     /// 全量写入。数据量在"个人猫舍"量级，不需要增量。
     func save() {
+        // 原文件没留档成功时**一律不写** —— 这一条保护的是"最后一次能救回来的机会"
+        guard !saveBlocked else { return }
         do {
             let blob = try AppStore.encode(data)
             try blob.write(to: storeFileURL, options: .atomic)
@@ -199,7 +215,56 @@ final class AppStore: ObservableObject {
     /// 供备份 / 导出复用的原始快照
     func snapshotData() throws -> Data { try AppStore.encode(data) }
 
+    // MARK: 每日自动快照
+    //
+    // 为什么要有：这次事故的真实形态是"更新后读不出来，而用户手上没有任何更早的备份"。
+    // 每天第一次成功启动时留一份，代价是几十 KB，换来的是"最坏情况下只丢一天"。
+
+    private func writeDailySnapshot() {
+        guard !saveBlocked else { return }
+        // 空数据不值得占一份快照位（还会把有价值的旧快照挤出去）
+        let isEmpty = data.cats.isEmpty && data.breedings.isEmpty
+            && data.bills.isEmpty && data.reminders.isEmpty && data.healthRecords.isEmpty
+        guard !isEmpty else { return }
+
+        let f = DateFormatter()
+        f.locale = Locale(identifier: "en_US_POSIX")
+        f.dateFormat = "yyyy-MM-dd"
+        let name = "自动快照-\(f.string(from: Date())).json"
+
+        do {
+            let folder = try BackupService.folder(in: documentsDirectory)
+            let dest = folder.appendingPathComponent(name)
+            // 今天已经有一份就不再写 —— 避免每次冷启动都重复落盘
+            guard !FileManager.default.fileExists(atPath: dest.path) else { return }
+            let blob = try AppStore.encode(data)
+            try ExportService.write(data: blob, fileName: name, in: folder)
+            pruneDailySnapshots(in: folder, keep: 7)
+        } catch {
+            // 快照失败不该影响启动；它只是保险，不是主路径
+        }
+    }
+
+    private func pruneDailySnapshots(in folder: URL, keep: Int) {
+        let files = (try? FileManager.default.contentsOfDirectory(at: folder,
+                                                                  includingPropertiesForKeys: nil)) ?? []
+        let autos = files
+            .filter { $0.lastPathComponent.hasPrefix("自动快照-") && $0.pathExtension == "json" }
+            .sorted { $0.lastPathComponent > $1.lastPathComponent }   // 文件名带日期，字典序即时间序
+        for old in autos.dropFirst(keep) {
+            try? FileManager.default.removeItem(at: old)
+        }
+    }
+
     func replaceAll(with incoming: AppData) {
+        // 恢复是用户的明确决定。若此前因为"留档失败"锁了写入，
+        // 这里再尽力把原文件留档一次；仍然失败也放行 —— 否则用户永远恢复不了。
+        if saveBlocked {
+            if FileManager.default.fileExists(atPath: storeFileURL.path) {
+                quarantinedFileName = AppStore.quarantine(storeFileURL) ?? quarantinedFileName
+            }
+            saveBlocked = false
+        }
         data = incoming
         save()
     }

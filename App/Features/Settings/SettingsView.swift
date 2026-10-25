@@ -75,7 +75,12 @@ struct SettingsView: View {
             Button("覆盖恢复", role: .destructive) { performRestore() }
             Button("取消", role: .cancel) { pendingRestore = nil }
         } message: {
-            Text("这份备份是「\(pendingRestore?.name ?? "")」（\(pendingRestore.map { BackupService.sizeText(of: $0.data) } ?? "")）。\n当前的种猫、繁育、账单、提醒会被它整体替换，且无法撤销。\n建议先创建一份现在的备份再恢复。")
+            let base = "这份备份是「\(pendingRestore?.name ?? "")」（\(pendingRestore.map { BackupService.sizeText(of: $0.data) } ?? "")）。\n当前的种猫、繁育、账单、提醒会被它整体替换，且无法撤销。\n建议先创建一份现在的备份再恢复。"
+            if let note = pendingRestore?.note {
+                Text(note + "\n\n" + base)
+            } else {
+                Text(base)
+            }
         }
     }
 
@@ -208,10 +213,17 @@ struct SettingsView: View {
     /// 措辞要求：**先讲清"你的东西没被删"，再讲下一步。**
     /// 数据类 App 出这种问题时，用户第一反应是"全没了" —— 而事实是它被留档了。
     /// 先把这句说出来，比任何技术细节都重要。
+    @ViewBuilder
     private func loadProblemCard(_ problem: String) -> some View {
-        DSAlertCard(title: "数据文件读不出来",
-                    message: "\(problem)\n\n你的原文件没有被覆盖 —— 我已经把它留档成：\(store.quarantinedFileName ?? "（留档没成功，原文件仍在原处）")",
-                    hint: "现在显示的是空数据。请到「文件」App → 我的 iPhone → Elese的猫舍 → Elese备份 里确认那份留档。\n如果最近做过备份，用上面的「从文件导入备份」把它导回来即可。")
+        if let kept = store.quarantinedFileName {
+            DSAlertCard(title: "数据文件读不出来",
+                        message: "\(problem)\n\n你的原文件没有被覆盖 —— 我已经把它留档成：\(kept)",
+                        hint: "现在显示的是空数据。点下面「从 App 内备份恢复」，选那份 store.corrupt 开头的文件即可找回（校验不通过时我会自动尝试逐条抢救）。")
+        } else {
+            DSAlertCard(title: "数据文件读不出来",
+                        message: "\(problem)\n\n原文件还留在原处，但留档（改名备份）没成功。",
+                        hint: "为了不把它盖掉，**我已经暂停了所有写入** —— 你现在做的修改都不会保存。\n请先用「从文件导入备份」恢复出一份数据，恢复成功后写入会自动恢复。")
+        }
     }
 
     // MARK: 自检
@@ -289,6 +301,11 @@ struct SettingsView: View {
 
     private func refresh() {
         backups = (try? BackupService.listBackups(in: BackupService.folder(in: store.documentsDirectory))) ?? []
+        // 数据读不出来时**自动展开备份列表** —— 这时候用户最需要就是"哪份能恢复"，
+        // 少点一次是一次（而且他此刻多半是慌的，不该再去找入口）。
+        if store.loadProblem != nil, !backups.isEmpty {
+            showRestoreList = true
+        }
         NotificationService.authorizationStatus { status in
             authStatus = status
         }
@@ -349,8 +366,7 @@ struct SettingsView: View {
     private func pickLocalBackup(_ url: URL) {
         do {
             let data = try Data(contentsOf: url)
-            _ = try BackupService.decode(data)          // 先验能不能解析
-            pendingRestore = RestorePayload(name: fileStamp(url), data: data)
+            prepareRestore(name: fileStamp(url), data: data)
         } catch {
             message = "这份备份读不出来：\(error.localizedDescription)"
         }
@@ -368,10 +384,35 @@ struct SettingsView: View {
             defer { if scoped { url.stopAccessingSecurityScopedResource() } }
             do {
                 let data = try Data(contentsOf: url)
-                _ = try BackupService.decode(data)
-                pendingRestore = RestorePayload(name: url.lastPathComponent, data: data)
+                prepareRestore(name: url.lastPathComponent, data: data)
             } catch {
-                message = "这不是本 App 的备份文件，或者文件已损坏。\n（选的是「\(url.lastPathComponent)」）"
+                message = "文件读不出来（\(error.localizedDescription)）\n（选的是「\(url.lastPathComponent)」）"
+            }
+        }
+    }
+
+    /// 恢复前的统一入口：**先严格解，解不动就诊断 + 逐条抢救**。
+    ///
+    /// 为什么要有抢救这一步：严格模式是"一条坏 → 全盘失败"，
+    /// 但用户真正想要的是"先把我能拿的拿回来"。数据类事故里，
+    /// 80% 的内容通常都是完好的，只是被一条坏记录卡住了整份文件。
+    private func prepareRestore(name: String, data: Data) {
+        // ① 严格解码
+        do {
+            let decoded = try BackupService.decode(data)
+            pendingRestore = RestorePayload(name: name, data: data,
+                                            decoded: decoded, salvaged: false, note: nil)
+            return
+        } catch {
+            // ② 严格失败 → 抢救
+            if let (salvaged, report) = BackupService.salvage(data), report.keptTotal > 0 {
+                pendingRestore = RestorePayload(
+                    name: name, data: data, decoded: salvaged, salvaged: true,
+                    note: "严格校验未通过（\(BackupService.describe(error))），已逐条抢救出：\(report.summary)")
+                message = "「\(name)」校验没过，但内容能捞回来：\(report.summary)\n在确认框里点「覆盖恢复」即可先拿回这部分。"
+            } else {
+                // ③ 连抢救都没有内容 → 说清到底为什么
+                message = "「\(name)」读不出来。\n诊断：\(BackupService.diagnose(data))\n（\(BackupService.sizeText(of: data))）"
             }
         }
     }
@@ -379,15 +420,16 @@ struct SettingsView: View {
     private func performRestore() {
         guard let payload = pendingRestore else { return }
         pendingRestore = nil
-        do {
-            let restored = try BackupService.decode(payload.data)
-            store.replaceAll(with: restored)
-            NotificationService.reschedule(reminders: restored.reminders)
-            // 恢复成功 = 那个问题已经处理完了，红框该收起来（否则它会一直挂在那里变成噪音）
-            store.clearLoadProblem()
-            message = "已恢复「\(payload.name)」：\(restored.cats.count) 只猫 · \(restored.breedings.count) 条繁育 · \(restored.bills.count) 笔账 · \(restored.reminders.count) 条提醒。"
-        } catch {
-            message = "恢复失败：这份内容解不出来（\(error.localizedDescription)）"
+        let restored = payload.decoded        // 进确认框之前就已经解好了，这里不会再失败
+        store.replaceAll(with: restored)
+        NotificationService.reschedule(reminders: restored.reminders)
+        // 恢复成功 = 那个问题已经处理完了，红框该收起来（否则它会一直挂在那里变成噪音）
+        store.clearLoadProblem()
+        let counts = "\(restored.cats.count) 只猫 · \(restored.breedings.count) 条繁育 · \(restored.bills.count) 笔账 · \(restored.reminders.count) 条提醒"
+        if payload.salvaged {
+            message = "已按抢救结果恢复「\(payload.name)」：\(counts)。\n（这份备份有部分记录结构损坏，被跳过；原始文件没有任何改动。）"
+        } else {
+            message = "已恢复「\(payload.name)」：\(counts)。"
         }
     }
 
@@ -417,4 +459,12 @@ struct SettingsView: View {
 private struct RestorePayload {
     let name: String
     let data: Data
+    /// **已经解好**的内容。放在这里而不是恢复时再解一次：
+    /// 一是避免"确认之后才发现解不开"的二次惊吓；
+    /// 二是抢救模式下来的内容不可能再严格解一遍（它本来就是解不动才抢救的）。
+    let decoded: AppData
+    /// 是否为"抢救"结果（严格校验未通过，逐条捞回来的）
+    let salvaged: Bool
+    /// 抢救说明（正常解码时为 nil）
+    let note: String?
 }

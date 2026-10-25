@@ -28,6 +28,18 @@ enum CatStatus: String, Codable, CaseIterable, Identifiable {
 
     var id: String { rawValue }
 
+    /// 容错解码 —— **这条是"数据全没了"的防线**。
+    ///
+    /// 历史：旧版本的枚举里有过 `mating`（配种中），后来被移除。
+    /// 用合成解码器时，存档里只要有一只猫写着 `"status": "mating"`，
+    /// 整个 `AppData` 解码就会抛错 —— 用户看到的是"数据全空"，
+    /// 而实际上只多了一个不认识的枚举值。**一条记录坏掉不该让整份数据陪葬。**
+    /// 未知值统一回退到「待产中」：宁可标签不精确，也不能读不出来。
+    init(from decoder: Decoder) throws {
+        let raw = (try? decoder.singleValueContainer().decode(String.self)) ?? ""
+        self = CatStatus(rawValue: raw) ?? .awaitingBirth
+    }
+
     var label: String {
         switch self {
         case .awaitingBirth: return "待产中"
@@ -88,6 +100,13 @@ enum BillCategory: String, Codable, CaseIterable, Identifiable {
     case food, medical, vaccine, breeding, supplies, other, sale
     var id: String { rawValue }
 
+    /// 容错解码：未知类目回退到「其他支出」。
+    /// 理由同 CatStatus —— 一个不认识的枚举值不该让整份账单读不出来。
+    init(from decoder: Decoder) throws {
+        let raw = (try? decoder.singleValueContainer().decode(String.self)) ?? ""
+        self = BillCategory(rawValue: raw) ?? .other
+    }
+
     var label: String {
         switch self {
         case .food: return "猫粮主食"
@@ -119,6 +138,13 @@ enum BillCategory: String, Codable, CaseIterable, Identifiable {
 
 enum ReminderKind: String, Codable, CaseIterable {
     case vaccine, deworm, weigh, ultrasound, dueDate, weanCheck
+
+    /// 容错解码：未知类型回退到「疫苗」。
+    /// 图标/文案可能不准，但**提醒本身不会因此消失** —— 这比整份数据读不出来强得多。
+    init(from decoder: Decoder) throws {
+        let raw = (try? decoder.singleValueContainer().decode(String.self)) ?? ""
+        self = ReminderKind(rawValue: raw) ?? .vaccine
+    }
 
     var label: String {
         switch self {
@@ -404,6 +430,12 @@ enum HealthKind: String, Codable, CaseIterable, Identifiable {
     case dewormExternal
 
     var id: String { rawValue }
+
+    /// 容错解码：未知类型回退到「疫苗」（同 ReminderKind 的理由）
+    init(from decoder: Decoder) throws {
+        let raw = (try? decoder.singleValueContainer().decode(String.self)) ?? ""
+        self = HealthKind(rawValue: raw) ?? .vaccine
+    }
 
     var label: String {
         switch self {
