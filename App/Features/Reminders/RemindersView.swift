@@ -157,6 +157,9 @@ struct RemindersView: View {
                 Label("删除这条提醒", systemImage: "trash")
             }
         }
+        // 强制按 id 建视图：列表增删时若复用状态，
+        // 上一行的 showDelete/deleting 会带到下一行，表现为"这一行删不掉"（整行被 offset 移出屏幕）。
+        .id(reminder.id)
     }
 
     // MARK: 已完成
@@ -171,14 +174,16 @@ struct RemindersView: View {
                                 onAction: { showDone.toggle() })
                 if showDone {
                     ForEach(done) { reminder in
-                        SwipeableRow(onDelete: {
-                            store.deleteReminder(id: reminder.id)
-                            NotificationService.reschedule(reminders: store.data.reminders)
-                        }) {
+                        // ⚠️ 已完成行**不用左滑**，改成右侧常驻删除按钮。
+                        // 原因：左滑是"隐藏手势"，点不到时用户完全无从下手；
+                        // 已完成的行本来就少、也不怕误触，直接给一个看得见的入口最稳。
+                        // 结构上刻意做成两个**平级** Button（不是 Button 套 Button）——
+                        // 嵌套按钮里，外层的点击会吃掉内层的。
+                        DSListRow {
                             Button {
                                 store.toggleReminder(id: reminder.id)
                             } label: {
-                                DSListRow {
+                                HStack(spacing: DS.Space.m) {
                                     DSIconTile(systemName: "checkmark",
                                                tint: DS.icon,
                                                background: DS.surfaceSoft)
@@ -197,11 +202,28 @@ struct RemindersView: View {
                                         .font(DS.Typo.caption)
                                         .foregroundStyle(DS.inkFaint)
                                 }
+                                .contentShape(Rectangle())
                             }
                             .buttonStyle(.plain)
+
+                            Button {
+                                withAnimation(.easeOut(duration: 0.2)) {
+                                    store.deleteReminder(id: reminder.id)
+                                }
+                                NotificationService.reschedule(reminders: store.data.reminders)
+                            } label: {
+                                Image(systemName: "trash")
+                                    .font(.system(size: 14, weight: .medium))
+                                    .foregroundStyle(DS.inkTertiary)
+                                    .frame(width: 34, height: 34)
+                                    .background(DS.surfaceSoft, in: Circle())
+                                    .contentShape(Circle())
+                            }
+                            .buttonStyle(.plain)
+                            .accessibilityLabel("删除这条已完成提醒")
                         }
                     }
-                    Text("点一下撤回「已完成」· 左滑删除")
+                    Text("点一下撤回「已完成」· 点右侧垃圾桶删除")
                         .font(.system(size: 11))
                         .foregroundStyle(DS.inkFaint)
                         .frame(maxWidth: .infinity, alignment: .leading)
